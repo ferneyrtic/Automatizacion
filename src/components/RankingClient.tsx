@@ -286,7 +286,7 @@ export default function RankingClient({
                     {getInitials(user.name)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate group-hover:text-[var(--primary)] transition-colors leading-tight">
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800 break-words group-hover:text-[var(--primary)] transition-colors leading-tight">
                       {user.name}
                     </p>
                     <p className="text-[10px] sm:text-xs text-gray-400 truncate mt-0.5">{user.equipo}</p>
