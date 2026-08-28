@@ -57,6 +57,15 @@ function parseShortDate(dateStr: string): string {
   return match ? match[1] : dateStr.slice(0, 5);
 }
 
+function normalizeEquipo(raw: string | undefined): string {
+  if (!raw || !raw.trim()) return 'Sin Equipo';
+  return raw
+    .trim()
+    .replace(/\s*-\s*/g, ' - ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
 export async function getRankingData(): Promise<DashboardData> {
   const empty: DashboardData = {
     ranking: [], stats: [], teamStats: [],
@@ -91,12 +100,25 @@ export async function getRankingData(): Promise<DashboardData> {
       if (date) allDates.push(date);
     }
 
-    const validRows = dataRows.filter(row => row[2]?.trim());
+    const IGNORED_NAMES = new Set([
+      'EMIRALDO ANDRES LOZANO SANCHEZ',
+      'JOSE RAMON ALVAREZ MONTOYA',
+      'DANIEL FERNANDO RIVERA VELASQUEZ',
+    ]);
+
+    const validRows = dataRows.filter(row => {
+      const name = row[2]?.trim();
+      const equipo = normalizeEquipo(row[1]);
+      if (!name) return false;
+      if (IGNORED_NAMES.has(name.toUpperCase()) || equipo === 'TIC - VIVIENDA') return false;
+      return true;
+    });
+
     const rankingMap: Record<string, UserRanking> = {};
 
     for (const row of validRows) {
       const name = row[2].trim();
-      const equipo = row[1]?.trim() || 'Sin Equipo';
+      const equipo = normalizeEquipo(row[1]);
       let totalPoints = 0;
       const historyByDate: DayRecord[] = [];
 
