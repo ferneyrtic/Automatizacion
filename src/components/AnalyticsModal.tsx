@@ -136,7 +136,7 @@ function TeamChart({ teamStats }: { teamStats: TeamStat[] }) {
           <Bar
             dataKey="totalPoints"
             radius={[0, 4, 4, 0]}
-            label={{ position: 'right', fontSize: 11, fill: C.muted, formatter: (v: number) => v > 0 ? v.toLocaleString() : '' }}
+            label={{ position: 'right', fontSize: 11, fill: C.muted, formatter: (v: any) => typeof v === 'number' && v > 0 ? v.toLocaleString() : '' }}
           >
             {data.map((entry, i) => (
               <Cell
