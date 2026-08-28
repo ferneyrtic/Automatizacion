@@ -47,14 +47,14 @@ function BarTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d: PublicationStat = payload[0].payload;
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl shadow-lg p-3 text-sm max-w-[200px]">
+    <div className="bg-white border border-[var(--border)] rounded-xl shadow-lg p-3 text-sm max-w-[220px]">
       <p className="font-semibold text-gray-800 text-xs leading-snug mb-1.5">{d.date}</p>
-      <p className="font-bold text-[var(--primary)]">
+      <p className="font-bold text-[var(--primary)] text-xs">
         {d.totalSupported}
-        <span className="text-gray-400 font-normal text-xs"> de {d.totalParticipants} personas</span>
+        <span className="text-gray-400 font-normal"> de {d.totalParticipants} personas ({d.participationRate}%)</span>
       </p>
-      <p className="text-gray-400 text-xs mt-1.5 pt-1.5 border-t border-gray-100">
-        Clic para ver desglose por acción
+      <p className="text-gray-400 text-[10px] mt-1.5 pt-1.5 border-t border-gray-100">
+        Toca para ver desglose por acción
       </p>
     </div>
   );
@@ -69,29 +69,29 @@ function DayDetailPanel({ day, onClose }: { day: PublicationStat; onClose: () =>
 
   return (
     <div className="mt-4 border border-[var(--border)] rounded-xl overflow-hidden bg-white">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-gray-50">
-        <div>
+      <div className="flex items-center justify-between px-3.5 sm:px-5 py-3 border-b border-[var(--border)] bg-gray-50">
+        <div className="min-w-0 pr-2">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Desglose</p>
-          <p className="text-sm font-semibold text-gray-800 mt-0.5">{day.date}</p>
+          <p className="text-xs sm:text-sm font-semibold text-gray-800 mt-0.5 truncate">{day.date}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-[var(--primary)]">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <span className="text-xs sm:text-sm font-bold text-[var(--primary)]">
             {day.totalSupported} / {day.totalParticipants}
-            <span className="text-xs font-normal text-gray-400 ml-1">({day.participationRate}%)</span>
+            <span className="text-[10px] sm:text-xs font-normal text-gray-400 ml-1">({day.participationRate}%)</span>
           </span>
           <button
             onClick={onClose}
-            className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-2.5 py-1 transition-colors"
+            className="text-[11px] sm:text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1 transition-colors bg-white"
           >
             Cerrar
           </button>
         </div>
       </div>
-      <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-5">
+      <div className="p-3.5 sm:p-5 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
         {actions.map(({ label, count, icon: Icon, bar }) => {
           const pct = day.totalParticipants > 0 ? Math.round((count / day.totalParticipants) * 100) : 0;
           return (
-            <div key={label} className="space-y-2">
+            <div key={label} className="space-y-1.5 sm:space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-gray-500">
                   <Icon size={13} />
@@ -104,7 +104,7 @@ function DayDetailPanel({ day, onClose }: { day: PublicationStat; onClose: () =>
               <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                 <div className={`h-1.5 rounded-full ${bar} transition-all duration-700`} style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-[10px] text-right text-gray-400">{pct}%</p>
+              <p className="text-[10px] text-right text-gray-400 font-medium">{pct}%</p>
             </div>
           );
         })}
@@ -127,7 +127,7 @@ interface Props {
 
 export default function RankingClient({
   ranking, stats, teamStats, actionDistribution,
-  totalParticipants, totalPoints, avgParticipationRate,
+  totalParticipants, avgParticipationRate,
 }: Props) {
   const [selectedUser, setSelectedUser]       = useState<UserRanking | null>(null);
   const [selectedDay, setSelectedDay]         = useState<PublicationStat | null>(null);
@@ -152,23 +152,23 @@ export default function RankingClient({
         avgParticipationRate={avgParticipationRate}
       />
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5">
 
         {/* ── Fila superior: participación diaria + botón de análisis ── */}
         {stats.length > 0 && (
           <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                  <BarChart2 size={15} className="text-[var(--primary)]" />
+            <div className="px-3.5 sm:px-5 py-3 sm:py-4 border-b border-[var(--border)] flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-semibold text-gray-800 flex items-center gap-1.5 sm:gap-2 truncate">
+                  <BarChart2 size={15} className="text-[var(--primary)] shrink-0" />
                   Participación por publicación
                 </h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Selecciona una barra para ver el desglose por acción
+                <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5 truncate">
+                  Toca una barra para ver el desglose
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-bold text-[var(--primary)] tabular-nums">{avgParticipationRate}%</p>
                   <p className="text-[10px] text-gray-400 uppercase tracking-wider">promedio</p>
@@ -177,21 +177,21 @@ export default function RankingClient({
                 {/* Botón de análisis profundo */}
                 <button
                   onClick={() => setShowAnalytics(true)}
-                  className="flex items-center gap-1.5 bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition-colors shadow-sm"
+                  className="flex items-center gap-1.5 bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-[11px] sm:text-xs font-semibold px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg transition-colors shadow-sm"
                 >
                   <LineIcon size={13} />
-                  Ver análisis
+                  <span>Análisis</span>
                 </button>
               </div>
             </div>
 
-            <div className="p-5">
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={stats} margin={{ top: 5, right: 10, left: -20, bottom: 45 }}>
+            <div className="p-3.5 sm:p-5">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={stats} margin={{ top: 5, right: 5, left: -25, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                   <XAxis
                     dataKey="shortDate"
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
                     angle={-45}
                     textAnchor="end"
                     tickLine={false}
@@ -199,7 +199,7 @@ export default function RankingClient({
                     interval={0}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
                     tickLine={false}
                     axisLine={false}
                     domain={[0, totalParticipants]}
@@ -210,7 +210,7 @@ export default function RankingClient({
                     y={totalParticipants}
                     stroke="#d1d5db"
                     strokeDasharray="4 4"
-                    label={{ value: `Total: ${totalParticipants}`, position: 'insideTopRight', fontSize: 10, fill: '#9ca3af' }}
+                    label={{ value: `Total: ${totalParticipants}`, position: 'insideTopRight', fontSize: 9, fill: '#9ca3af' }}
                   />
                   <Bar dataKey="totalSupported" radius={[3, 3, 0, 0]} cursor="pointer" onClick={handleBarClick}>
                     {stats.map((entry, i) => (
@@ -232,14 +232,14 @@ export default function RankingClient({
 
         {/* ── Tabla de posiciones ── */}
         <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-[var(--border)]">
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold text-gray-800 shrink-0">Tabla de posiciones</h2>
-              <div className="relative flex-1 max-w-xs ml-auto">
+          <div className="px-3.5 sm:px-5 py-3 sm:py-4 border-b border-[var(--border)]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+              <h2 className="text-xs sm:text-sm font-semibold text-gray-800 shrink-0">Tabla de posiciones</h2>
+              <div className="relative w-full sm:max-w-xs">
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Buscar participante..."
+                  placeholder="Buscar participante o equipo..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="w-full pl-8 pr-3 py-2 rounded-lg border border-[var(--border)] bg-gray-50 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-xs"
@@ -248,13 +248,15 @@ export default function RankingClient({
             </div>
           </div>
 
-          <div className="grid grid-cols-[56px_1fr_auto_auto] items-center px-5 py-2.5 bg-gray-50 border-b border-[var(--border)]">
+          {/* Encabezado de la tabla */}
+          <div className="grid grid-cols-[38px_1fr_auto] sm:grid-cols-[48px_1fr_auto_auto] items-center px-3.5 sm:px-5 py-2.5 bg-gray-50 border-b border-[var(--border)]">
             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center">#</span>
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Participante</span>
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right">Puntos</span>
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right w-24">Estado</span>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider pl-1 sm:pl-2">Participante</span>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right pr-1 sm:pr-4">Puntos</span>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right w-24 hidden sm:block">Estado</span>
           </div>
 
+          {/* Filas de participantes */}
           {filtered.map((user, index) => {
             const position = ranks[index] || index + 1;
             const isTop3 = position <= 3;
@@ -262,35 +264,45 @@ export default function RankingClient({
               <div
                 key={user.name || index}
                 onClick={() => setSelectedUser(user)}
-                className="grid grid-cols-[56px_1fr_auto_auto] items-center px-5 py-3.5 border-b border-[var(--border)] last:border-0 hover:bg-blue-50/30 transition-colors cursor-pointer group"
+                className="grid grid-cols-[38px_1fr_auto] sm:grid-cols-[48px_1fr_auto_auto] items-center px-3.5 sm:px-5 py-2.5 sm:py-3.5 border-b border-[var(--border)] last:border-0 hover:bg-blue-50/40 transition-colors cursor-pointer group"
               >
+                {/* Ranking / Posición */}
                 <div className="flex justify-center">
                   {isTop3 ? (
-                    <div className="flex items-center gap-1">
-                      {position === 1 && <Crown size={15} className="text-[var(--secondary)]" />}
-                      {position === 2 && <Medal size={15} className="text-gray-400" />}
-                      {position === 3 && <Medal size={15} className="text-amber-500" />}
-                      <span className="text-sm font-bold text-gray-700">{position}</span>
+                    <div className="flex items-center gap-0.5 sm:gap-1">
+                      {position === 1 && <Crown size={14} className="text-[var(--secondary)] shrink-0" />}
+                      {position === 2 && <Medal size={14} className="text-gray-400 shrink-0" />}
+                      {position === 3 && <Medal size={14} className="text-amber-500 shrink-0" />}
+                      <span className="text-xs sm:text-sm font-bold text-gray-700">{position}</span>
                     </div>
                   ) : (
-                    <span className="text-sm font-medium text-gray-400 tabular-nums">{position}</span>
+                    <span className="text-xs sm:text-sm font-medium text-gray-400 tabular-nums">{position}</span>
                   )}
                 </div>
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-xs font-bold shrink-0">
+
+                {/* Avatar + Nombre + Equipo */}
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-[10px] sm:text-xs font-bold shrink-0 shadow-sm">
                     {getInitials(user.name)}
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate group-hover:text-[var(--primary)] transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate group-hover:text-[var(--primary)] transition-colors leading-tight">
                       {user.name}
                     </p>
-                    <p className="text-xs text-gray-400 truncate">{user.equipo}</p>
+                    <p className="text-[10px] sm:text-xs text-gray-400 truncate mt-0.5">{user.equipo}</p>
                   </div>
                 </div>
-                <span className="text-sm font-semibold tabular-nums text-right text-gray-700 pr-4">
-                  {user.totalPoints || 0}
-                </span>
-                <div className="text-right w-24">
+
+                {/* Puntos */}
+                <div className="text-right pr-1 sm:pr-4 flex flex-col items-end justify-center">
+                  <span className="text-xs sm:text-sm font-bold tabular-nums text-[var(--primary)] sm:text-gray-800">
+                    {user.totalPoints || 0}
+                  </span>
+                  <span className="text-[8px] text-gray-400 sm:hidden uppercase font-semibold">pts</span>
+                </div>
+
+                {/* Estado badge (solo visible en pantallas medianas y grandes para no apretar el nombre) */}
+                <div className="text-right w-24 hidden sm:block">
                   <EstadoBadge activo={(user.totalPoints || 0) > 0} />
                 </div>
               </div>
@@ -305,7 +317,7 @@ export default function RankingClient({
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 gap-2 px-1 pb-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] sm:text-xs text-gray-400 gap-1.5 px-1 pb-6">
           <span>Total: {ranking.length} participantes</span>
           <span className="flex items-center gap-1.5">
             <Clock size={11} />

@@ -12,34 +12,34 @@ interface HeaderProps {
 export default function Header({ totalParticipants, activeUsers, avgParticipationRate }: HeaderProps) {
   return (
     <header className="bg-white border-b border-[var(--border)]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto px-3.5 sm:px-6">
 
         {/* Fila principal */}
-        <div className="flex items-center justify-between py-3">
-          <div className="flex items-center gap-4">
-            <div className="bg-blue-50 rounded-xl px-3 py-1.5 flex items-center">
+        <div className="flex items-center justify-between py-2.5 sm:py-3 gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="bg-blue-50/80 rounded-xl px-2.5 py-1 sm:px-3 sm:py-1.5 flex items-center shrink-0">
               <Image
                 src="/logos/logo.png"
                 alt="Alcaldía de Acacías"
                 width={400}
                 height={140}
                 quality={100}
-                className="object-contain w-auto h-12"
+                className="object-contain w-auto h-9 sm:h-12"
                 priority
                 unoptimized
               />
             </div>
 
-            <div className="border-l border-gray-200 h-10 hidden sm:block" />
+            <div className="border-l border-gray-200 h-9 hidden sm:block" />
 
-            <div className="hidden sm:block">
-              <h1 className="text-lg font-semibold text-[var(--foreground)] tracking-tight">
+            <div className="hidden sm:block min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-[var(--foreground)] tracking-tight truncate">
                 Tabla de posiciones
               </h1>
-              <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
+              <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 truncate">
                 <span>Oficina TIC</span>
                 <span className="w-1 h-1 rounded-full bg-gray-300" />
-                <span>CPS · 2do semestre 2026</span>
+                <span>CPS · 2026</span>
                 <span className="w-1 h-1 rounded-full bg-gray-300" />
                 <span className="text-[var(--primary)] font-medium">#RecuperandoAcacías</span>
               </p>
@@ -47,8 +47,8 @@ export default function Header({ totalParticipants, activeUsers, avgParticipatio
           </div>
 
           {/* Stats compactas en header */}
-          <div className="flex items-center gap-2">
-            <Stat icon={Users} value={totalParticipants} label="Participantes" color="text-[var(--primary)] bg-blue-50" />
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <Stat icon={Users} value={totalParticipants} label="Total" color="text-[var(--primary)] bg-blue-50" />
             <Stat icon={TrendingUp} value={`${activeUsers}`} label="Activos" color="text-emerald-600 bg-emerald-50" />
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-50">
               <TrendingUp size={14} className="text-gray-400" />
@@ -61,13 +61,13 @@ export default function Header({ totalParticipants, activeUsers, avgParticipatio
         </div>
 
         {/* Barra inferior */}
-        <div className="flex items-center justify-between pb-2.5 border-t border-gray-50 pt-2">
-          <span className="flex items-center gap-1.5 text-xs text-gray-400">
-            <Clock size={12} />
-            Actualizado hace unos segundos
+        <div className="flex items-center justify-between pb-2 border-t border-gray-50 pt-1.5 text-[11px] sm:text-xs">
+          <span className="flex items-center gap-1.5 text-gray-400">
+            <Clock size={11} />
+            <span className="truncate">Actualizado en vivo</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-semibold tracking-wide">
-            <Radio size={10} className="animate-pulse" />
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[9px] sm:text-[10px] font-semibold tracking-wide">
+            <Radio size={9} className="animate-pulse text-emerald-600" />
             En vivo
           </span>
         </div>
@@ -82,11 +82,11 @@ function Stat({
   icon: React.ElementType; value: string | number; label: string; color: string;
 }) {
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${color}`}>
-      <Icon size={14} />
+    <div className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg ${color}`}>
+      <Icon size={13} className="shrink-0" />
       <div>
-        <p className="text-sm font-bold leading-none tabular-nums">{value}</p>
-        <p className="text-[8px] font-medium uppercase tracking-wider text-gray-500">{label}</p>
+        <p className="text-xs sm:text-sm font-bold leading-none tabular-nums">{value}</p>
+        <p className="text-[7px] sm:text-[8px] font-medium uppercase tracking-wider text-gray-500 mt-0.5">{label}</p>
       </div>
     </div>
   );
