@@ -1,7 +1,10 @@
 import { google } from 'googleapis';
 
 export type DayRecord = {
+  publicationId: string;
   date: string;
+  publicationName?: string;
+  publicationLink?: string;
   shared: boolean;
   commented: boolean;
   reacted: boolean;
@@ -16,8 +19,11 @@ export type UserRanking = {
 };
 
 export type PublicationStat = {
+  id: string;
   date: string;
   shortDate: string;
+  name: string;
+  link?: string;
   totalSupported: number;
   sharedCount: number;
   commentedCount: number;
@@ -52,18 +58,88 @@ export type DashboardData = {
 
 const POINTS = { shared: 15, commented: 20, reacted: 10 };
 
+const DATE_PATTERN = /^\d{2}\/\d{2}\/\d{4}/;
+
 function parseShortDate(dateStr: string): string {
   const match = dateStr.match(/(\d{2}\/\d{2})/);
   return match ? match[1] : dateStr.slice(0, 5);
 }
 
-function normalizeEquipo(raw: string | undefined): string {
-  if (!raw || !raw.trim()) return 'Sin Equipo';
-  return raw
+/**
+ * Normaliza nombres de equipo para agrupaciones consistentes:
+ * - espacios unicode (NBSP, etc.) -> espacio normal
+ * - caracteres de ancho cero eliminados
+ * - espacios múltiples colapsados
+ * - separador de guion estandarizado: "TIC- VIVIENDA" -> "TIC - VIVIENDA"
+ * - guion colgante eliminado: "TIC - " -> "TIC"
+ * - el equipo VIVIENDA no existe: cualquier equipo con "VIVIENDA" se asigna a "TIC"
+ */
+function normalizeTeamName(raw: string): string {
+  if (!raw) return 'Sin Equipo';
+  const normalized = raw
+    .replace(/[\u00A0\u2007\u202F]/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .replace(/\s*-\s*/g, ' - ')
-    .replace(/\s+/g, ' ')
-    .toUpperCase();
+    .replace(/\s+-\s*$/, '')
+    .trim();
+  if (!normalized) return 'Sin Equipo';
+  if (/vivienda/i.test(normalized)) return 'TIC';
+  return normalized;
+}
+
+/** Extrae el nombre legible y el link de la celda de publicación (puede ser multilínea). */
+function parsePublicationCell(raw: string | undefined): { name: string; link: string } {
+  const lines = (raw || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const link = lines.find(l => /^https?:\/\//i.test(l)) || '';
+  const name = lines.find(l => !/^https?:\/\//i.test(l)) || '';
+  return { name, link };
+}
+
+/** Localiza la fila que contiene las fechas de las publicaciones (dd/mm/yyyy en columnas >= 6). */
+function findDateRow(rows: string[][]): number {
+  for (let r = 0; r < Math.min(5, rows.length); r++) {
+    const row = rows[r] || [];
+    const hasDate = row.slice(6).some(c => DATE_PATTERN.test((c || '').trim()));
+    if (hasDate) return r;
+  }
+  return -1;
+}
+
+/** Localiza la fila de encabezados de columnas ("No | EQUIPO | Contratista | ..."). */
+function findHeaderRow(rows: string[][], start: number): number {
+  for (let r = start; r < Math.min(start + 5, rows.length); r++) {
+    if (String((rows[r] || [])[2] || '').trim().toLowerCase() === 'contratista') return r;
+  }
+  return -1;
+}
+
+/**
+ * Detecta las filas ocultas (fold/ocultadas por el usuario) de la hoja.
+ * Devuelve un Set con los índices 0-based (mismo índice que rows de values.get con A1).
+ */
+async function fetchHiddenRows(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sheets: any,
+  spreadsheetId: string | undefined,
+): Promise<Set<number>> {
+  const hidden = new Set<number>();
+  if (!spreadsheetId) return hidden;
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      includeGridData: true,
+      ranges: ['A1:ZZ'],
+    });
+    const grid = meta.data?.sheets?.[0]?.data?.[0];
+    grid?.rowMetadata?.forEach((row: { hidden?: boolean }, i: number) => {
+      if (row.hidden) hidden.add(i);
+    });
+  } catch (error) {
+    console.error('Error fetching hidden rows:', error);
+  }
+  return hidden;
 }
 
 export async function getRankingData(): Promise<DashboardData> {
@@ -85,45 +161,48 @@ export async function getRankingData(): Promise<DashboardData> {
     const sheets = google.sheets({ version: 'v4', auth });
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: 'A2:ZZ',
+      range: 'A1:ZZ',
     });
 
     const rows = response.data.values;
     if (!rows || rows.length < 4) return empty;
 
-    const dateRow = rows[0];
-    const dataRows = rows.slice(3);
+    // Filas ocultadas por el usuario en Excel: no se leen (ni gráficas ni tabla).
+    const hiddenRows = await fetchHiddenRows(sheets, process.env.GOOGLE_SHEET_ID);
 
-    const allDates: string[] = [];
+    // ── Detección dinámica de la estructura de la hoja ────────────────────
+    const dateRowIndex = findDateRow(rows);
+    if (dateRowIndex < 0) return empty;
+
+    const dateRow = rows[dateRowIndex];
+    const nameRow = rows[dateRowIndex + 1] || [];
+    const headerRowIndex = findHeaderRow(rows, dateRowIndex + 2);
+    const dataStart = headerRowIndex > 0 ? headerRowIndex + 1 : dateRowIndex + 3;
+
+    // Publicaciones: la columna base (6 + grupo * 3) es el identificador estable.
+    const publications: { id: string; col: number; date: string; name: string; link?: string }[] = [];
     for (let i = 6; i < dateRow.length; i += 3) {
       const date = dateRow[i]?.trim();
-      if (date) allDates.push(date);
+      if (date) {
+        const { name, link } = parsePublicationCell(nameRow[i]);
+        publications.push({ id: `pub-${i}`, col: i, date, name, link: link || undefined });
+      }
     }
+    if (publications.length === 0) return empty;
 
-    const IGNORED_NAMES = new Set([
-      'EMIRALDO ANDRES LOZANO SANCHEZ',
-      'JOSE RAMON ALVAREZ MONTOYA',
-      'DANIEL FERNANDO RIVERA VELASQUEZ',
-    ]);
-
-    const validRows = dataRows.filter(row => {
-      const name = row[2]?.trim();
-      const equipo = normalizeEquipo(row[1]);
-      if (!name) return false;
-      if (IGNORED_NAMES.has(name.toUpperCase()) || equipo === 'TIC - VIVIENDA') return false;
-      return true;
-    });
-
+    const dataRows = rows
+      .slice(dataStart)
+      .filter((row, i) => row[2]?.trim() && !hiddenRows.has(dataStart + i));
     const rankingMap: Record<string, UserRanking> = {};
 
-    for (const row of validRows) {
+    for (const row of dataRows) {
       const name = row[2].trim();
-      const equipo = normalizeEquipo(row[1]);
+      const equipo = normalizeTeamName(row[1]);
       let totalPoints = 0;
       const historyByDate: DayRecord[] = [];
 
-      allDates.forEach((date, groupIndex) => {
-        const base = 6 + groupIndex * 3;
+      for (const pub of publications) {
+        const base = pub.col;
         const shared    = row[base]?.trim().toUpperCase() === 'X';
         const commented = row[base + 1]?.trim().toUpperCase() === 'X';
         const reacted   = row[base + 2]?.trim().toUpperCase() === 'X';
@@ -132,8 +211,14 @@ export async function getRankingData(): Promise<DashboardData> {
           (commented ? POINTS.commented : 0) +
           (reacted ? POINTS.reacted : 0);
         totalPoints += pointsEarned;
-        historyByDate.push({ date, shared, commented, reacted, pointsEarned });
-      });
+        historyByDate.push({
+          publicationId: pub.id,
+          date: pub.date,
+          publicationName: pub.name || undefined,
+          publicationLink: pub.link,
+          shared, commented, reacted, pointsEarned,
+        });
+      }
 
       rankingMap[name] = { name, equipo, totalPoints, historyByDate };
     }
@@ -143,14 +228,13 @@ export async function getRankingData(): Promise<DashboardData> {
     const totalPoints = ranking.reduce((acc, u) => acc + u.totalPoints, 0);
 
     // ── Estadísticas por publicación ──────────────────────────────────────
-    const stats: PublicationStat[] = allDates.map((date, groupIndex) => {
-      const base = 6 + groupIndex * 3;
+    const stats: PublicationStat[] = publications.map(pub => {
       let sharedCount = 0, commentedCount = 0, reactedCount = 0, totalSupported = 0;
 
-      for (const row of validRows) {
-        const s = row[base]?.trim().toUpperCase() === 'X';
-        const c = row[base + 1]?.trim().toUpperCase() === 'X';
-        const r = row[base + 2]?.trim().toUpperCase() === 'X';
+      for (const row of dataRows) {
+        const s = row[pub.col]?.trim().toUpperCase() === 'X';
+        const c = row[pub.col + 1]?.trim().toUpperCase() === 'X';
+        const r = row[pub.col + 2]?.trim().toUpperCase() === 'X';
         if (s) sharedCount++;
         if (c) commentedCount++;
         if (r) reactedCount++;
@@ -158,7 +242,11 @@ export async function getRankingData(): Promise<DashboardData> {
       }
 
       return {
-        date, shortDate: parseShortDate(date),
+        id: pub.id,
+        date: pub.date,
+        shortDate: parseShortDate(pub.date),
+        name: pub.name,
+        link: pub.link,
         totalSupported, sharedCount, commentedCount, reactedCount,
         totalParticipants,
         participationRate: totalParticipants > 0
@@ -170,7 +258,7 @@ export async function getRankingData(): Promise<DashboardData> {
       ? Math.round(stats.reduce((acc, s) => acc + s.participationRate, 0) / stats.length)
       : 0;
 
-    // ── Estadísticas por equipo ───────────────────────────────────────────
+    // ── Estadísticas por equipo (agrupando con nombres normalizados) ──────
     const teamMap: Record<string, { totalPoints: number; active: number; total: number }> = {};
     for (const user of ranking) {
       if (!teamMap[user.equipo]) teamMap[user.equipo] = { totalPoints: 0, active: 0, total: 0 };
@@ -186,6 +274,8 @@ export async function getRankingData(): Promise<DashboardData> {
         totalMembers: d.total,
         participationRate: d.total > 0 ? Math.round((d.active / d.total) * 100) : 0,
       }))
+      // Un equipo solo aparece si tiene al menos un participante válido (con puntos).
+      .filter(t => t.activeMembers > 0)
       .sort((a, b) => b.totalPoints - a.totalPoints);
 
     // ── Distribución de acciones ──────────────────────────────────────────
