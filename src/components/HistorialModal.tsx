@@ -5,14 +5,15 @@ import {
   X, Calendar, CheckCircle, XCircle, ChevronDown, ChevronUp,
   Share2, MessageSquare, ThumbsUp, Check,
 } from 'lucide-react';
-import type { UserRanking } from '@/lib/googleSheets';
+import type { UserRanking, ActionPoints } from '@/lib/googleSheets';
 
 interface HistorialModalProps {
   user: UserRanking | null;
   onClose: () => void;
+  points?: ActionPoints;
 }
 
-export default function HistorialModal({ user, onClose }: HistorialModalProps) {
+export default function HistorialModal({ user, onClose, points }: HistorialModalProps) {
   const [expandido, setExpandido] = useState(true);
 
   if (!user) return null;
@@ -23,9 +24,9 @@ export default function HistorialModal({ user, onClose }: HistorialModalProps) {
   const participacionCompleta = totalDias > 0 && diasActivos === totalDias;
 
   const acciones = [
-    { label: 'Compartir', key: 'shared' as const, icon: Share2, points: 15 },
-    { label: 'Comentar', key: 'commented' as const, icon: MessageSquare, points: 20 },
-    { label: 'Reaccionar', key: 'reacted' as const, icon: ThumbsUp, points: 10 },
+    { label: 'Compartir', key: 'shared' as const, icon: Share2, points: points?.shared ?? 15 },
+    { label: 'Comentar', key: 'commented' as const, icon: MessageSquare, points: points?.commented ?? 20 },
+    { label: 'Reaccionar', key: 'reacted' as const, icon: ThumbsUp, points: points?.reacted ?? 10 },
   ];
 
   return (
@@ -148,7 +149,6 @@ export default function HistorialModal({ user, onClose }: HistorialModalProps) {
                       {acciones.map((accion, i) => {
                         const Icon = accion.icon;
                         const done = day[accion.key];
-                        const pts = day[`${accion.key}Points`] || accion.points;
                         return (
                           <div
                             key={i}
@@ -164,7 +164,7 @@ export default function HistorialModal({ user, onClose }: HistorialModalProps) {
                                 {accion.label}
                               </p>
                               <p className={`text-[10px] ${done ? 'text-[var(--primary)]' : 'text-gray-400'}`}>
-                                {done ? `+${pts} pts` : 'Pendiente'}
+                                {done ? `+${accion.points} pts` : 'Pendiente'}
                               </p>
                             </div>
                             {done

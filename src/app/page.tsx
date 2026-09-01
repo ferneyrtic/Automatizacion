@@ -8,15 +8,7 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen">
-      <RankingClient
-        ranking={data.ranking}
-        stats={data.stats}
-        teamStats={data.teamStats}
-        actionDistribution={data.actionDistribution}
-        totalParticipants={data.totalParticipants}
-        totalPoints={data.totalPoints}
-        avgParticipationRate={data.avgParticipationRate}
-      />
+      <RankingClient months={data.months} />
     </main>
   );
 }

@@ -10,7 +10,7 @@ import {
   Tooltip as RTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar,
 } from 'recharts';
-import type { PublicationStat, TeamStat, ActionDistribution, UserRanking } from '@/lib/googleSheets';
+import type { PublicationStat, TeamStat, ActionDistribution, UserRanking, ActionPoints } from '@/lib/googleSheets';
 
 // ─── Colores (hex para recharts) ─────────────────────────────────────────────
 const C = {
@@ -257,10 +257,11 @@ function TeamChart({ teamStats, ranking }: { teamStats: TeamStat[]; ranking: Use
 
 // ─── GRÁFICA 3: Distribución de acciones (Dona) ──────────────────────────────
 
-function ActionDonut({ dist, totalPublications, totalParticipants }: {
+function ActionDonut({ dist, totalPublications, totalParticipants, points }: {
   dist: ActionDistribution;
   totalPublications: number;
   totalParticipants: number;
+  points: ActionPoints;
 }) {
   // Máximo posible por tipo = cuántas veces pudo hacerse esa acción en total
   // (una vez por persona por publicación)
@@ -270,9 +271,9 @@ function ActionDonut({ dist, totalPublications, totalParticipants }: {
   const donutTotal = dist.shared + dist.commented + dist.reacted;
 
   const actions = [
-    { name: 'Compartir',  value: dist.shared,    color: C.primary,   pts: 15 },
-    { name: 'Comentar',   value: dist.commented, color: C.secondary, pts: 20 },
-    { name: 'Reaccionar', value: dist.reacted,   color: C.emerald,   pts: 10 },
+    { name: 'Compartir',  value: dist.shared,    color: C.primary,   pts: points.shared },
+    { name: 'Comentar',   value: dist.commented, color: C.secondary, pts: points.commented },
+    { name: 'Reaccionar', value: dist.reacted,   color: C.emerald,   pts: points.reacted },
   ].map(d => ({
     ...d,
     // % de cumplimiento vs el máximo posible
@@ -404,9 +405,10 @@ interface Props {
   stats: PublicationStat[];
   teamStats: TeamStat[];
   actionDistribution: ActionDistribution;
+  points: ActionPoints;
 }
 
-export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamStats, actionDistribution }: Props) {
+export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamStats, actionDistribution, points }: Props) {
   const [current, setCurrent] = useState(0);
 
   if (!isOpen) return null;
@@ -455,6 +457,7 @@ export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamSt
               dist={actionDistribution}
               totalPublications={stats.length}
               totalParticipants={stats[0]?.totalParticipants ?? 0}
+              points={points}
             />
           )}
         </div>
