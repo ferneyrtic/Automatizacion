@@ -8,9 +8,6 @@ export type DayRecord = {
   shared: boolean;
   commented: boolean;
   reacted: boolean;
-  sharedPoints: number;
-  commentedPoints: number;
-  reactedPoints: number;
   pointsEarned: number;
 };
 
@@ -60,24 +57,6 @@ export type DashboardData = {
 };
 
 const POINTS = { shared: 15, commented: 20, reacted: 10 };
-
-/**
- * Interpreta una celda de acción de la hoja.
- * Antes se marcaba con "X"; ahora el valor de la casilla ES el puntaje
- * ganado (10, 15, 20, ...). Por compatibilidad, una "X" equivale al
- * puntaje estándar de esa acción.
- */
-function parseActionCell(raw: string | undefined, defaultPoints: number): { done: boolean; points: number } {
-  const value = (raw || '').trim();
-  if (!value) return { done: false, points: 0 };
-  if (value.toUpperCase() === 'X') return { done: true, points: defaultPoints };
-  const numeric = parseFloat(value.replace(/\s+/g, '').replace(',', '.'));
-  if (!isNaN(numeric)) {
-    const points = Math.round(numeric);
-    return points > 0 ? { done: true, points } : { done: false, points: 0 };
-  }
-  return { done: false, points: 0 };
-}
 
 const DATE_PATTERN = /^\d{2}\/\d{2}\/\d{4}/;
 
@@ -224,24 +203,20 @@ export async function getRankingData(): Promise<DashboardData> {
 
       for (const pub of publications) {
         const base = pub.col;
-        const sharedCell    = parseActionCell(row[base], POINTS.shared);
-        const commentedCell = parseActionCell(row[base + 1], POINTS.commented);
-        const reactedCell   = parseActionCell(row[base + 2], POINTS.reacted);
-        const shared    = sharedCell.done;
-        const commented = commentedCell.done;
-        const reacted   = reactedCell.done;
-        const pointsEarned = sharedCell.points + commentedCell.points + reactedCell.points;
+        const shared    = row[base]?.trim().toUpperCase() === 'X';
+        const commented = row[base + 1]?.trim().toUpperCase() === 'X';
+        const reacted   = row[base + 2]?.trim().toUpperCase() === 'X';
+        const pointsEarned =
+          (shared ? POINTS.shared : 0) +
+          (commented ? POINTS.commented : 0) +
+          (reacted ? POINTS.reacted : 0);
         totalPoints += pointsEarned;
         historyByDate.push({
           publicationId: pub.id,
           date: pub.date,
           publicationName: pub.name || undefined,
           publicationLink: pub.link,
-          shared, commented, reacted,
-          sharedPoints: sharedCell.points,
-          commentedPoints: commentedCell.points,
-          reactedPoints: reactedCell.points,
-          pointsEarned,
+          shared, commented, reacted, pointsEarned,
         });
       }
 
@@ -257,13 +232,13 @@ export async function getRankingData(): Promise<DashboardData> {
       let sharedCount = 0, commentedCount = 0, reactedCount = 0, totalSupported = 0;
 
       for (const row of dataRows) {
-        const s = parseActionCell(row[pub.col], POINTS.shared);
-        const c = parseActionCell(row[pub.col + 1], POINTS.commented);
-        const r = parseActionCell(row[pub.col + 2], POINTS.reacted);
-        if (s.done) sharedCount++;
-        if (c.done) commentedCount++;
-        if (r.done) reactedCount++;
-        if (s.done || c.done || r.done) totalSupported++;
+        const s = row[pub.col]?.trim().toUpperCase() === 'X';
+        const c = row[pub.col + 1]?.trim().toUpperCase() === 'X';
+        const r = row[pub.col + 2]?.trim().toUpperCase() === 'X';
+        if (s) sharedCount++;
+        if (c) commentedCount++;
+        if (r) reactedCount++;
+        if (s || c || r) totalSupported++;
       }
 
       return {

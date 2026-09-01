@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import {
   Crown, Medal, Clock, Search, BarChart2,
   Share2, MessageSquare, ThumbsUp, LineChart as LineIcon,
-  Calendar, X, ExternalLink, ChevronUp, ChevronDown,
+  Calendar, X, ExternalLink,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -28,6 +28,12 @@ const ACTION_LABELS: Record<ActionFilter, string> = {
   reacted: 'Reacciones',
 };
 
+const ACTION_POINTS: Record<Exclude<ActionFilter, 'all'>, number> = {
+  shared: 15,
+  commented: 20,
+  reacted: 10,
+};
+
 const ACTION_CHIPS: Record<Exclude<ActionFilter, 'all'>, { label: string; pts: number; Icon: typeof Share2; cls: string }> = {
   shared:    { label: 'Compartió', pts: 15, Icon: Share2,        cls: 'bg-blue-50 text-[var(--primary)] border-blue-100' },
   commented: { label: 'Comentó',   pts: 20, Icon: MessageSquare, cls: 'bg-amber-50 text-[var(--secondary)] border-amber-100' },
@@ -48,32 +54,17 @@ function getInitials(name: string) {
   return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 }
 
-function pointsForFilter(day: DayRecord, f: ActionFilter): number {
-  if (f === 'all') return day.pointsEarned;
-  if (!day[f]) return 0;
-  if (f === 'shared') return day.sharedPoints;
-  if (f === 'commented') return day.commentedPoints;
-  return day.reactedPoints;
+function getDenseRanking(data: UserRanking[]): number[] {
+  let rank = 1;
+  return data.map((u, i) => {
+    if (i > 0 && u.totalPoints < data[i - 1].totalPoints) rank = i + 1;
+    return rank;
+  });
 }
 
-function SortablePointsHeader({ sort, onToggle, label = 'Puntos' }: {
-  sort: 'asc' | 'desc';
-  onToggle: () => void;
-  label?: string;
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      title="Ordenar por puntos (ascendente / descendente)"
-      className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider hover:text-[var(--primary)] transition-colors"
-    >
-      {label}
-      <span className="flex flex-col leading-none -space-y-0.5">
-        <ChevronUp size={9} strokeWidth={3} className={sort === 'asc' ? 'text-[var(--primary)]' : 'text-gray-300'} />
-        <ChevronDown size={9} strokeWidth={3} className={sort === 'desc' ? 'text-[var(--primary)]' : 'text-gray-300'} />
-      </span>
-    </button>
-  );
+function pointsForFilter(day: DayRecord, f: ActionFilter): number {
+  if (f === 'all') return day.pointsEarned;
+  return day[f] ? ACTION_POINTS[f] : 0;
 }
 
 function EstadoBadge({ activo }: { activo: boolean }) {
@@ -225,10 +216,6 @@ export default function RankingClient({
   const [selectedAction, setSelectedAction]   = useState<ActionFilter>('all');
   const [search, setSearch]                   = useState('');
   const [showAnalytics, setShowAnalytics]     = useState(false);
-  const [pointsSort, setPointsSort]           = useState<'asc' | 'desc'>('desc');
-  const [globalAction, setGlobalAction]       = useState<ActionFilter>('all');
-
-  const togglePointsSort = () => setPointsSort(s => (s === 'asc' ? 'desc' : 'asc'));
 
   const activeUsers = ranking.filter(u => (u.totalPoints || 0) > 0).length;
 
@@ -254,75 +241,18 @@ export default function RankingClient({
     return counts;
   }, [publicationRows]);
 
-  const filtered       = ranking.filter(u => u.name.toLowerCase().includes(search.toLowerCase()));
-  const ranksByName    = useMemo(() => {
-    const map: Record<string, number> = {};
-    const sorted = [...filtered].sort((a, b) => b.totalPoints - a.totalPoints || a.name.localeCompare(b.name));
-    let rank = 1;
-    sorted.forEach((u, i) => {
-      if (i > 0 && u.totalPoints < sorted[i - 1].totalPoints) rank = i + 1;
-      map[u.name] = rank;
-    });
-    return map;
-  }, [filtered]);
+  const filtered    = ranking.filter(u => u.name.toLowerCase().includes(search.toLowerCase()));
+  const ranks       = getDenseRanking(filtered);
 
-  const visibleRanking = useMemo(() => {
-    const list = [...filtered];
-    const dir = pointsSort === 'asc' ? -1 : 1;
-    list.sort((a, b) => dir * (b.totalPoints - a.totalPoints) || a.name.localeCompare(b.name));
-    return list;
-  }, [filtered, pointsSort]);
-
-  const visibleRows = useMemo(() => {
-    if (!selectedPublication) return [];
-    const rows = publicationRows
-      .filter(r => selectedAction === 'all' || r.day[selectedAction])
-      .filter(r => r.user.name.toLowerCase().includes(search.toLowerCase()));
-    const dir = pointsSort === 'asc' ? -1 : 1;
-    rows.sort((a, b) =>
-      dir * (pointsForFilter(b.day, selectedAction) - pointsForFilter(a.day, selectedAction)) ||
-      a.user.name.localeCompare(b.user.name)
-    );
-    return rows;
-  }, [publicationRows, selectedPublication, selectedAction, search, pointsSort]);
-
-  const globalActionCounts = useMemo(() => {
-    const counts: Record<ActionFilter, number> = { all: ranking.length, shared: 0, commented: 0, reacted: 0 };
-    for (const user of ranking) {
-      for (const day of user.historyByDate || []) {
-        if (day.shared) counts.shared++;
-        if (day.commented) counts.commented++;
-        if (day.reacted) counts.reacted++;
-      }
-    }
-    return counts;
-  }, [ranking]);
-
-  const globalActionRows = useMemo(() => {
-    const action = globalAction === 'all' ? null : globalAction;
-    if (!action) return [] as { user: UserRanking; count: number; points: number }[];
-    const rows = ranking
-      .map(user => {
-        let count = 0;
-        let points = 0;
-        for (const day of user.historyByDate || []) {
-          if (day[action]) {
-            count++;
-            points += day[`${action}Points`] || 0;
-          }
-        }
-        return { user, count, points };
-      })
-      .filter(r => r.count > 0)
-      .filter(r => r.user.name.toLowerCase().includes(search.toLowerCase()));
-    const dir = pointsSort === 'asc' ? -1 : 1;
-    rows.sort((a, b) =>
-      dir * (b.points - a.points) ||
-      b.count - a.count ||
-      a.user.name.localeCompare(b.user.name)
-    );
-    return rows;
-  }, [ranking, globalAction, search, pointsSort]);
+  const visibleRows = selectedPublication
+    ? publicationRows
+        .filter(r => selectedAction === 'all' || r.day[selectedAction])
+        .filter(r => r.user.name.toLowerCase().includes(search.toLowerCase()))
+        .sort((a, b) =>
+          pointsForFilter(b.day, selectedAction) - pointsForFilter(a.day, selectedAction) ||
+          a.user.name.localeCompare(b.user.name)
+        )
+    : [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleBarClick = (data: any) => {
@@ -436,20 +366,11 @@ export default function RankingClient({
           <div className="px-5 py-4 border-b border-[var(--border)]">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-gray-800 shrink-0">
-                {selectedPublication
-                  ? 'Participantes por publicación'
-                  : globalAction !== 'all'
-                    ? 'Participantes por acción'
-                    : 'Tabla de posiciones'}
+                {selectedPublication ? 'Participantes por publicación' : 'Tabla de posiciones'}
               </h2>
               {selectedPublication && (
                 <span className="text-[10px] font-semibold text-[var(--primary)] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full shrink-0">
                   {selectedPublication.shortDate}
-                </span>
-              )}
-              {!selectedPublication && globalAction !== 'all' && (
-                <span className="text-[10px] font-semibold text-[var(--primary)] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full shrink-0">
-                  {ACTION_LABELS[globalAction]}
                 </span>
               )}
               <div className="relative flex-1 max-w-xs ml-auto">
@@ -463,28 +384,6 @@ export default function RankingClient({
                 />
               </div>
             </div>
-
-            {!selectedPublication && (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Acciones:</span>
-                {ACTION_KEYS.map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setGlobalAction(f)}
-                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                      globalAction === f
-                        ? 'bg-[var(--primary)] text-white border-[var(--primary)] shadow-sm'
-                        : 'bg-gray-50 text-gray-500 border-[var(--border)] hover:bg-gray-100'
-                    }`}
-                  >
-                    {ACTION_LABELS[f]}
-                    <span className={`ml-1.5 tabular-nums ${globalAction === f ? 'text-white/70' : 'text-gray-400'}`}>
-                      {globalActionCounts[f]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {selectedPublication ? (
@@ -494,9 +393,7 @@ export default function RankingClient({
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center">#</span>
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Participante</span>
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right">Acción</span>
-                  <span className="text-right">
-                    <SortablePointsHeader sort={pointsSort} onToggle={togglePointsSort} />
-                  </span>
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right">Puntos</span>
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right w-24">Estado</span>
                 </div>
 
@@ -524,11 +421,10 @@ export default function RankingClient({
                       {(selectedAction === 'all' ? (['shared', 'commented', 'reacted'] as const) : [selectedAction]).map(k => {
                         if (!day[k]) return null;
                         const chip = ACTION_CHIPS[k];
-                        const pts = k === 'shared' ? day.sharedPoints : k === 'commented' ? day.commentedPoints : day.reactedPoints;
                         return (
                           <span key={k} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${chip.cls}`}>
                             <chip.Icon size={11} />
-                            {chip.label} <span className="opacity-70">+{pts}</span>
+                            {chip.label} <span className="opacity-70">+{chip.pts}</span>
                           </span>
                         );
                       })}
@@ -555,75 +451,17 @@ export default function RankingClient({
                 )}
               </div>
             </div>
-          ) : globalAction !== 'all' ? (
-            <>
-              <div className="grid grid-cols-[56px_minmax(0,1fr)_auto_auto_auto] items-center px-5 py-2.5 bg-gray-50 border-b border-[var(--border)]">
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center">#</span>
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Participante</span>
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right">Veces</span>
-                <span className="text-right">
-                  <SortablePointsHeader sort={pointsSort} onToggle={togglePointsSort} />
-                </span>
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right w-24">Estado</span>
-              </div>
-
-              {globalActionRows.map(({ user, count, points }, index) => (
-                <div
-                  key={user.name}
-                  onClick={() => setSelectedUser(user)}
-                  className="grid grid-cols-[56px_minmax(0,1fr)_auto_auto_auto] items-center px-5 py-3 border-b border-[var(--border)] last:border-0 hover:bg-blue-50/30 transition-colors cursor-pointer group"
-                >
-                  <div className="flex justify-center">
-                    <span className="text-sm font-medium text-gray-400 tabular-nums">{index + 1}</span>
-                  </div>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                      {getInitials(user.name)}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate group-hover:text-[var(--primary)] transition-colors">
-                        {user.name}
-                      </p>
-                      <p className="text-xs text-gray-400 truncate">{user.equipo}</p>
-                    </div>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums text-right text-gray-700 pr-4">
-                    {count} <span className="text-[10px] font-normal text-gray-400">veces</span>
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums text-right text-gray-700 pr-4">
-                    {points}
-                  </span>
-                  <div className="text-right w-24">
-                    <EstadoBadge activo={points > 0} />
-                  </div>
-                </div>
-              ))}
-
-              {globalActionRows.length === 0 && (
-                <div className="py-14 text-center text-gray-400">
-                  <Search size={26} className="mx-auto mb-3 text-gray-200" />
-                  <p className="text-sm">{EMPTY_MESSAGES[globalAction]}</p>
-                  {search && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      para la búsqueda <strong>&quot;{search}&quot;</strong>
-                    </p>
-                  )}
-                </div>
-              )}
-            </>
           ) : (
             <>
               <div className="grid grid-cols-[56px_1fr_auto_auto] items-center px-5 py-2.5 bg-gray-50 border-b border-[var(--border)]">
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center">#</span>
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Participante</span>
-                <span className="text-right">
-                  <SortablePointsHeader sort={pointsSort} onToggle={togglePointsSort} />
-                </span>
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right">Puntos</span>
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right w-24">Estado</span>
               </div>
 
-              {visibleRanking.map((user, index) => {
-                const position = ranksByName[user.name] || index + 1;
+              {filtered.map((user, index) => {
+                const position = ranks[index] || index + 1;
                 const isTop3 = position <= 3;
                 return (
                   <div
@@ -664,7 +502,7 @@ export default function RankingClient({
                 );
               })}
 
-              {visibleRanking.length === 0 && (
+              {filtered.length === 0 && (
                 <div className="py-14 text-center text-gray-400">
                   <Search size={26} className="mx-auto mb-3 text-gray-200" />
                   <p className="text-sm">Sin resultados para <strong>&quot;{search}&quot;</strong></p>
@@ -678,9 +516,7 @@ export default function RankingClient({
           <span>
             {selectedPublication
               ? `Total: ${publicationRows.length} participantes en esta publicación`
-              : globalAction !== 'all'
-                ? `Total: ${globalActionRows.length} participantes · ${globalActionCounts[globalAction]} ${ACTION_LABELS[globalAction].toLowerCase()} en total`
-                : `Total: ${ranking.length} participantes`}
+              : `Total: ${ranking.length} participantes`}
           </span>
           <span className="flex items-center gap-1.5">
             <Clock size={11} />

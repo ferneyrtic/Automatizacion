@@ -148,7 +148,6 @@ export default function HistorialModal({ user, onClose }: HistorialModalProps) {
                       {acciones.map((accion, i) => {
                         const Icon = accion.icon;
                         const done = day[accion.key];
-                        const pts = day[`${accion.key}Points`] || accion.points;
                         return (
                           <div
                             key={i}
@@ -164,7 +163,7 @@ export default function HistorialModal({ user, onClose }: HistorialModalProps) {
                                 {accion.label}
                               </p>
                               <p className={`text-[10px] ${done ? 'text-[var(--primary)]' : 'text-gray-400'}`}>
-                                {done ? `+${pts} pts` : 'Pendiente'}
+                                {done ? `+${accion.points} pts` : 'Pendiente'}
                               </p>
                             </div>
                             {done
