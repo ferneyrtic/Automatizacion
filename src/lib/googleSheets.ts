@@ -119,11 +119,6 @@ function parsePublicationCell(raw: string | undefined): { name: string; link: st
   return { name, link };
 }
 
-<<<<<<< Updated upstream
-/** Localiza la fila que contiene las fechas de las publicaciones (dd/mm/yyyy en columnas >= 6). */
-function findDateRow(rows: string[][]): number {
-  for (let r = 0; r < Math.min(5, rows.length); r++) {
-=======
 /**
  * Extrae el enlace de perfil de una celda (columna D del Excel).
  * Acepta URLs completas (https://...) o dominios simples (facebook.com/...).
@@ -140,27 +135,9 @@ function extractProfileLink(raw: string | undefined): string | undefined {
   return undefined;
 }
 
-type SheetStructure = {
-  headerRowIdx: number;
-  baseCol: number;      // columna donde inician las acciones (Compartio)
-  dateRowIdx: number;
-  nameRowIdx: number;
-  dataStart: number;
-};
-
-/**
- * Detecta si una pestaña tiene el formato de tabla analizable:
- * fila de encabezados con "Contratista" + "Compartio/Comento/Reacciono",
- * y una fila de fechas de publicación (dd/mm/yyyy o "1 de septiembre de 2026").
- * La columna base se detecta por contenido, por lo que tolera columnas desplazadas.
- */
-function detectStructure(rows: string[][]): SheetStructure | null {
-  const max = Math.min(6, rows.length);
-
-  let headerRowIdx = -1;
-  let baseCol = -1;
-  for (let r = 0; r < max; r++) {
->>>>>>> Stashed changes
+/** Localiza la fila que contiene las fechas de las publicaciones (dd/mm/yyyy en columnas >= 6). */
+function findDateRow(rows: string[][]): number {
+  for (let r = 0; r < Math.min(5, rows.length); r++) {
     const row = rows[r] || [];
     const hasDate = row.slice(6).some(c => DATE_PATTERN.test((c || '').trim()));
     if (hasDate) return r;
@@ -173,118 +150,7 @@ function findHeaderRow(rows: string[][], start: number): number {
   for (let r = start; r < Math.min(start + 5, rows.length); r++) {
     if (String((rows[r] || [])[2] || '').trim().toLowerCase() === 'contratista') return r;
   }
-<<<<<<< Updated upstream
   return -1;
-=======
-  if (publications.length === 0) return null;
-
-  // Filas de datos: después del encabezado, con nombre y no ocultas en Excel.
-  const dataRows = rows
-    .slice(dataStart)
-    .filter((row, i) => row[2]?.trim() && !hiddenRows.has(dataStart + i));
-
-  const rankingMap: Record<string, UserRanking> = {};
-
-  for (const row of dataRows) {
-    const name = row[2].trim();
-    const equipo = normalizeTeamName(row[1]);
-    const profileLink = extractProfileLink(row[3]);
-    let totalPoints = 0;
-    const historyByDate: DayRecord[] = [];
-
-    for (const pub of publications) {
-      const base = pub.col;
-      const sharedCell    = parseActionCell(row[base], points.shared);
-      const commentedCell = parseActionCell(row[base + 1], points.commented);
-      const reactedCell   = parseActionCell(row[base + 2], points.reacted);
-      const shared    = sharedCell.done;
-      const commented = commentedCell.done;
-      const reacted   = reactedCell.done;
-      const pointsEarned = sharedCell.points + commentedCell.points + reactedCell.points;
-      totalPoints += pointsEarned;
-      historyByDate.push({
-        publicationId: pub.id,
-        date: pub.date,
-        publicationName: pub.name || undefined,
-        publicationLink: pub.link,
-        shared, commented, reacted,
-        sharedPoints: sharedCell.points,
-        commentedPoints: commentedCell.points,
-        reactedPoints: reactedCell.points,
-        pointsEarned,
-      });
-    }
-
-    rankingMap[name] = { name, equipo, profileLink, totalPoints, historyByDate };
-  }
-
-  const ranking = Object.values(rankingMap).sort((a, b) => b.totalPoints - a.totalPoints);
-  const totalParticipants = ranking.length;
-  const totalPoints = ranking.reduce((acc, u) => acc + u.totalPoints, 0);
-
-  // ── Estadísticas por publicación ──────────────────────────────────────
-  const stats: PublicationStat[] = publications.map(pub => {
-    let sharedCount = 0, commentedCount = 0, reactedCount = 0, totalSupported = 0;
-
-    for (const row of dataRows) {
-      const s = parseActionCell(row[pub.col], points.shared);
-      const c = parseActionCell(row[pub.col + 1], points.commented);
-      const r = parseActionCell(row[pub.col + 2], points.reacted);
-      if (s.done) sharedCount++;
-      if (c.done) commentedCount++;
-      if (r.done) reactedCount++;
-      if (s.done || c.done || r.done) totalSupported++;
-    }
-
-    return {
-      id: pub.id,
-      date: pub.date,
-      shortDate: parseShortDate(pub.date),
-      name: pub.name,
-      link: pub.link,
-      totalSupported, sharedCount, commentedCount, reactedCount,
-      totalParticipants,
-      participationRate: totalParticipants > 0
-        ? Math.round((totalSupported / totalParticipants) * 100) : 0,
-    };
-  });
-
-  const avgParticipationRate = stats.length > 0
-    ? Math.round(stats.reduce((acc, s) => acc + s.participationRate, 0) / stats.length)
-    : 0;
-
-  // ── Estadísticas por equipo (agrupando con nombres normalizados) ──────
-  const teamMap: Record<string, { totalPoints: number; active: number; total: number }> = {};
-  for (const user of ranking) {
-    if (!teamMap[user.equipo]) teamMap[user.equipo] = { totalPoints: 0, active: 0, total: 0 };
-    teamMap[user.equipo].totalPoints += user.totalPoints;
-    teamMap[user.equipo].total++;
-    if (user.totalPoints > 0) teamMap[user.equipo].active++;
-  }
-  const teamStats: TeamStat[] = Object.entries(teamMap)
-    .map(([equipo, d]) => ({
-      equipo,
-      totalPoints: d.totalPoints,
-      activeMembers: d.active,
-      totalMembers: d.total,
-      participationRate: d.total > 0 ? Math.round((d.active / d.total) * 100) : 0,
-    }))
-    // Un equipo solo aparece si tiene al menos un participante válido (con puntos).
-    .filter(t => t.activeMembers > 0)
-    .sort((a, b) => b.totalPoints - a.totalPoints);
-
-  // ── Distribución de acciones ──────────────────────────────────────────
-  const actionDistribution: ActionDistribution = {
-    shared:    stats.reduce((acc, s) => acc + s.sharedCount, 0),
-    commented: stats.reduce((acc, s) => acc + s.commentedCount, 0),
-    reacted:   stats.reduce((acc, s) => acc + s.reactedCount, 0),
-  };
-
-  return {
-    id, title, ranking, stats, teamStats, actionDistribution, points,
-    totalParticipants, totalPoints, avgParticipationRate,
-  };
->>>>>>> Stashed changes
 }
 
 /**
@@ -370,6 +236,7 @@ export async function getRankingData(): Promise<DashboardData> {
     for (const row of dataRows) {
       const name = row[2].trim();
       const equipo = normalizeTeamName(row[1]);
+      const profileLink = extractProfileLink(row[3]);
       let totalPoints = 0;
       const historyByDate: DayRecord[] = [];
 
@@ -396,7 +263,7 @@ export async function getRankingData(): Promise<DashboardData> {
         });
       }
 
-      rankingMap[name] = { name, equipo, totalPoints, historyByDate };
+      rankingMap[name] = { name, equipo, profileLink, totalPoints, historyByDate };
     }
 
     const ranking = Object.values(rankingMap).sort((a, b) => b.totalPoints - a.totalPoints);

@@ -693,7 +693,6 @@ export default function RankingClient({
       {selectedUser && (
         <HistorialModal
           user={selectedUser}
-          points={current.points}
           onClose={() => setSelectedUser(null)}
         />
       )}
