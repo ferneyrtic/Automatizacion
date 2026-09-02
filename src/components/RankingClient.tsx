@@ -10,7 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
-import type { UserRanking, PublicationStat, DayRecord, MonthData } from '@/lib/googleSheets';
+import type { UserRanking, PublicationStat, TeamStat, ActionDistribution, DayRecord } from '@/lib/googleSheets';
 import Header from '@/components/header';
 import HistorialModal from '@/components/HistorialModal';
 import AnalyticsModal from '@/components/AnalyticsModal';
@@ -141,9 +141,9 @@ function PublicationPanel({
                 href={pub.link}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline mt-1"
+                className="mt-2.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-white bg-[var(--primary)] hover:bg-[var(--primary-dark)] px-4 py-2 rounded-lg shadow-sm transition-colors"
               >
-                <ExternalLink size={11} /> Ver publicación
+                <ExternalLink size={14} /> Ver publicación
               </a>
             )}
           </div>
@@ -207,32 +207,28 @@ function PublicationPanel({
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 interface Props {
-  months: MonthData[];
+  ranking: UserRanking[];
+  stats: PublicationStat[];
+  teamStats: TeamStat[];
+  actionDistribution: ActionDistribution;
+  totalParticipants: number;
+  totalPoints: number;
+  avgParticipationRate: number;
 }
 
-export default function RankingClient({ months }: Props) {
-  const [selectedMonthId, setSelectedMonthId]     = useState<string | null>(null);
-  const [selectedUser, setSelectedUser]           = useState<UserRanking | null>(null);
+export default function RankingClient({
+  ranking, stats, teamStats, actionDistribution,
+  totalParticipants, avgParticipationRate,
+}: Props) {
+  const [selectedUser, setSelectedUser]       = useState<UserRanking | null>(null);
   const [selectedPublication, setSelectedPublication] = useState<PublicationStat | null>(null);
-  const [selectedAction, setSelectedAction]       = useState<ActionFilter>('all');
-  const [search, setSearch]                       = useState('');
-  const [showAnalytics, setShowAnalytics]         = useState(false);
-  const [pointsSort, setPointsSort]               = useState<'asc' | 'desc'>('desc');
-  const [globalAction, setGlobalAction]           = useState<ActionFilter>('all');
-
-  const current = months.find(m => m.id === selectedMonthId) ?? months[0] ?? null;
-  const ranking = useMemo(() => current?.ranking ?? [], [current]);
+  const [selectedAction, setSelectedAction]   = useState<ActionFilter>('all');
+  const [search, setSearch]                   = useState('');
+  const [showAnalytics, setShowAnalytics]     = useState(false);
+  const [pointsSort, setPointsSort]           = useState<'asc' | 'desc'>('desc');
+  const [globalAction, setGlobalAction]       = useState<ActionFilter>('all');
 
   const togglePointsSort = () => setPointsSort(s => (s === 'asc' ? 'desc' : 'asc'));
-
-  const selectMonth = (id: string) => {
-    setSelectedMonthId(id);
-    setSelectedPublication(null);
-    setSelectedAction('all');
-    setSelectedUser(null);
-    setGlobalAction('all');
-    setSearch('');
-  };
 
   const activeUsers = ranking.filter(u => (u.totalPoints || 0) > 0).length;
 
@@ -328,30 +324,6 @@ export default function RankingClient({ months }: Props) {
     return rows;
   }, [ranking, globalAction, search, pointsSort]);
 
-  // Sin pestañas válidas: no hay datos que mostrar.
-  if (!current) {
-    return (
-      <div className="min-h-screen bg-[var(--background)]">
-        <Header
-          totalParticipants={0}
-          activeUsers={0}
-          avgParticipationRate={0}
-          months={[]}
-          selectedMonthId={null}
-          onSelectMonth={() => {}}
-        />
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20 text-center">
-          <Search size={32} className="mx-auto mb-3 text-gray-200" />
-          <p className="text-sm text-gray-400">
-            No hay datos disponibles. Verifica la conexión con Google Sheets o el formato de las pestañas.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const { stats, teamStats, actionDistribution, totalParticipants, avgParticipationRate } = current;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleBarClick = (data: any) => {
     const pub = data as PublicationStat;
@@ -366,8 +338,6 @@ export default function RankingClient({ months }: Props) {
     setSelectedAction('all');
   };
 
-  const monthTabs = months.map(m => ({ id: m.id, title: m.title }));
-
   return (
     <div className="min-h-screen bg-[var(--background)]">
 
@@ -375,20 +345,17 @@ export default function RankingClient({ months }: Props) {
         totalParticipants={totalParticipants}
         activeUsers={activeUsers}
         avgParticipationRate={avgParticipationRate}
-        months={monthTabs}
-        selectedMonthId={current.id}
-        onSelectMonth={selectMonth}
       />
 
-      <div key={current.id} className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
 
         {/* ── Fila superior: participación diaria + botón de análisis ── */}
         {stats.length > 0 && (
           <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
-              <div>
+            <div className="px-4 sm:px-5 py-4 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                  <BarChart2 size={15} className="text-[var(--primary)]" />
+                  <BarChart2 size={15} className="text-[var(--primary)] shrink-0" />
                   Participación por publicación
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
@@ -396,7 +363,7 @@ export default function RankingClient({ months }: Props) {
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-bold text-[var(--primary)] tabular-nums">{avgParticipationRate}%</p>
                   <p className="text-[10px] text-gray-400 uppercase tracking-wider">promedio</p>
@@ -413,7 +380,7 @@ export default function RankingClient({ months }: Props) {
               </div>
             </div>
 
-            <div className="p-5">
+            <div className="p-3 sm:p-5">
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={stats} margin={{ top: 5, right: 10, left: -20, bottom: 45 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -466,8 +433,8 @@ export default function RankingClient({ months }: Props) {
 
         {/* ── Tabla de posiciones / participantes por publicación ── */}
         <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-[var(--border)]">
-            <div className="flex items-center gap-3">
+          <div className="px-4 sm:px-5 py-4 border-b border-[var(--border)]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="text-sm font-semibold text-gray-800 shrink-0">
                 {selectedPublication
                   ? 'Participantes por publicación'
@@ -485,7 +452,7 @@ export default function RankingClient({ months }: Props) {
                   {ACTION_LABELS[globalAction]}
                 </span>
               )}
-              <div className="relative flex-1 max-w-xs ml-auto">
+              <div className="relative flex-1 min-w-[180px] max-w-xs ml-auto">
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -724,7 +691,11 @@ export default function RankingClient({ months }: Props) {
 
       {/* Modales */}
       {selectedUser && (
-        <HistorialModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        <HistorialModal
+          user={selectedUser}
+          points={current.points}
+          onClose={() => setSelectedUser(null)}
+        />
       )}
 
       <AnalyticsModal
@@ -734,7 +705,6 @@ export default function RankingClient({ months }: Props) {
         stats={stats}
         teamStats={teamStats}
         actionDistribution={actionDistribution}
-        points={current.points}
       />
     </div>
   );

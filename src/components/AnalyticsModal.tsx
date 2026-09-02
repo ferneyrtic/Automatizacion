@@ -10,7 +10,7 @@ import {
   Tooltip as RTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar,
 } from 'recharts';
-import type { PublicationStat, TeamStat, ActionDistribution, UserRanking, ActionPoints } from '@/lib/googleSheets';
+import type { PublicationStat, TeamStat, ActionDistribution, UserRanking } from '@/lib/googleSheets';
 
 // ─── Colores (hex para recharts) ─────────────────────────────────────────────
 const C = {
@@ -60,7 +60,7 @@ function TrendChart({ stats }: { stats: PublicationStat[] }) {
   return (
     <div>
       {/* Mini KPIs */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-5">
         <MiniKPI label="Promedio" value={`${avg}%`} />
         <MiniKPI label="Último dato" value={`${last.participationRate}%`} accent={isUp ? 'emerald' : 'red'} />
         <MiniKPI label="Mejor día" value={max.shortDate} accent="primary" />
@@ -165,7 +165,7 @@ function TeamChart({ teamStats, ranking }: { teamStats: TeamStat[]; ranking: Use
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mb-5">
           <MiniKPI label="Miembros" value={stat.totalMembers} />
           <MiniKPI label="Activos" value={`${stat.activeMembers} / ${stat.totalMembers}`} accent="primary" />
           <MiniKPI label="Puntos" value={stat.totalPoints.toLocaleString()} />
@@ -257,11 +257,10 @@ function TeamChart({ teamStats, ranking }: { teamStats: TeamStat[]; ranking: Use
 
 // ─── GRÁFICA 3: Distribución de acciones (Dona) ──────────────────────────────
 
-function ActionDonut({ dist, totalPublications, totalParticipants, points }: {
+function ActionDonut({ dist, totalPublications, totalParticipants }: {
   dist: ActionDistribution;
   totalPublications: number;
   totalParticipants: number;
-  points: ActionPoints;
 }) {
   // Máximo posible por tipo = cuántas veces pudo hacerse esa acción en total
   // (una vez por persona por publicación)
@@ -271,9 +270,9 @@ function ActionDonut({ dist, totalPublications, totalParticipants, points }: {
   const donutTotal = dist.shared + dist.commented + dist.reacted;
 
   const actions = [
-    { name: 'Compartir',  value: dist.shared,    color: C.primary,   pts: points.shared },
-    { name: 'Comentar',   value: dist.commented, color: C.secondary, pts: points.commented },
-    { name: 'Reaccionar', value: dist.reacted,   color: C.emerald,   pts: points.reacted },
+    { name: 'Compartir',  value: dist.shared,    color: C.primary,   pts: 15 },
+    { name: 'Comentar',   value: dist.commented, color: C.secondary, pts: 20 },
+    { name: 'Reaccionar', value: dist.reacted,   color: C.emerald,   pts: 10 },
   ].map(d => ({
     ...d,
     // % de cumplimiento vs el máximo posible
@@ -405,10 +404,9 @@ interface Props {
   stats: PublicationStat[];
   teamStats: TeamStat[];
   actionDistribution: ActionDistribution;
-  points: ActionPoints;
 }
 
-export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamStats, actionDistribution, points }: Props) {
+export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamStats, actionDistribution }: Props) {
   const [current, setCurrent] = useState(0);
 
   if (!isOpen) return null;
@@ -426,30 +424,30 @@ export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamSt
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <div>
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0">
             <h2 className="text-base font-bold text-gray-900">Análisis estadístico</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Datos en tiempo real desde el archivo de Google Sheets</p>
+            <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">Datos en tiempo real desde el archivo de Google Sheets</p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg p-1.5 transition-colors"
+            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg p-1.5 transition-colors shrink-0"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Título del gráfico actual */}
-        <div className="px-6 pt-5 pb-0 shrink-0">
+        <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-0 shrink-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <SlideIcon size={15} className="text-[#0A4B8C]" />
+            <SlideIcon size={15} className="text-[#0A4B8C] shrink-0" />
             <h3 className="text-sm font-bold text-gray-900">{slide.label}</h3>
           </div>
           <p className="text-xs text-gray-400">{slide.subtitle}</p>
         </div>
 
         {/* Área del gráfico (scrollable) */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-5">
           {current === 0 && <TrendChart stats={stats} />}
           {current === 1 && <TeamChart teamStats={teamStats} ranking={ranking} />}
           {current === 2 && (
@@ -457,13 +455,12 @@ export default function AnalyticsModal({ isOpen, onClose, ranking, stats, teamSt
               dist={actionDistribution}
               totalPublications={stats.length}
               totalParticipants={stats[0]?.totalParticipants ?? 0}
-              points={points}
             />
           )}
         </div>
 
         {/* Navegación */}
-        <div className="px-6 py-4 border-t border-gray-100 shrink-0">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 shrink-0">
           <div className="flex items-center justify-between">
 
             {/* Flecha anterior */}

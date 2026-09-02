@@ -1,41 +1,30 @@
 'use client';
 
 import Image from 'next/image';
-import { Users, TrendingUp, Clock, Radio, CalendarDays } from 'lucide-react';
-
-export type MonthTab = {
-  id: string;
-  title: string;
-};
+import { Users, TrendingUp, Clock, Radio } from 'lucide-react';
 
 interface HeaderProps {
   totalParticipants: number;
   activeUsers: number;
   avgParticipationRate: number;
-  months: MonthTab[];
-  selectedMonthId: string | null;
-  onSelectMonth: (id: string) => void;
 }
 
-export default function Header({
-  totalParticipants, activeUsers, avgParticipationRate,
-  months, selectedMonthId, onSelectMonth,
-}: HeaderProps) {
+export default function Header({ totalParticipants, activeUsers, avgParticipationRate }: HeaderProps) {
   return (
     <header className="bg-white border-b border-[var(--border)]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
 
         {/* Fila principal */}
-        <div className="flex items-center justify-between py-3">
-          <div className="flex items-center gap-4">
-            <div className="bg-blue-50 rounded-xl px-3 py-1.5 flex items-center">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="bg-blue-50 rounded-xl px-2.5 sm:px-3 py-1.5 flex items-center shrink-0">
               <Image
                 src="/logos/logo.png"
                 alt="Alcaldía de Acacías"
                 width={400}
                 height={140}
                 quality={100}
-                className="object-contain w-auto h-12"
+                className="object-contain w-auto h-9 sm:h-12"
                 priority
                 unoptimized
               />
@@ -58,7 +47,7 @@ export default function Header({
           </div>
 
           {/* Stats compactas en header */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
             <Stat icon={Users} value={totalParticipants} label="Participantes" color="text-[var(--primary)] bg-blue-50" />
             <Stat icon={TrendingUp} value={`${activeUsers}`} label="Activos" color="text-emerald-600 bg-emerald-50" />
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-50">
@@ -72,7 +61,7 @@ export default function Header({
         </div>
 
         {/* Barra inferior */}
-        <div className="flex items-center justify-between pb-2.5 border-t border-gray-50 pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-t border-gray-50 pt-2">
           <span className="flex items-center gap-1.5 text-xs text-gray-400">
             <Clock size={12} />
             Actualizado hace unos segundos
@@ -82,26 +71,6 @@ export default function Header({
             En vivo
           </span>
         </div>
-
-        {/* Panel de pestañas por mes: se genera automáticamente con cada pestaña válida del Excel */}
-        {months.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-3 -mb-1 scrollbar-none">
-            <CalendarDays size={14} className="text-gray-400 shrink-0" />
-            {months.map(m => (
-              <button
-                key={m.id}
-                onClick={() => onSelectMonth(m.id)}
-                className={`shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-lg border transition-colors ${
-                  selectedMonthId === m.id
-                    ? 'bg-[var(--primary)] text-white border-[var(--primary)] shadow-sm'
-                    : 'bg-gray-50 text-gray-500 border-[var(--border)] hover:bg-gray-100 hover:text-gray-700'
-                }`}
-              >
-                {m.title}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </header>
   );
