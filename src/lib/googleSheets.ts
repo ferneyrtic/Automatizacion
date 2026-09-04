@@ -17,6 +17,7 @@ export type DayRecord = {
 export type UserRanking = {
   name: string;
   equipo: string;
+  profileLink?: string;
   totalPoints: number;
   historyByDate: DayRecord[];
 };
@@ -152,6 +153,22 @@ function parsePublicationCell(raw: string | undefined): { name: string; link: st
   return { name, link };
 }
 
+/**
+ * Extrae el enlace de perfil de una celda (columna D del Excel).
+ * Acepta URLs completas (https://...) o dominios simples (facebook.com/...).
+ */
+function extractProfileLink(raw: string | undefined): string | undefined {
+  const lines = (raw || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const candidate = lines.find(l => /^https?:\/\//i.test(l)) || lines[0];
+  if (!candidate) return undefined;
+  const clean = (url: string) => url.replace(/[),.;!?\]]+$/g, '');
+  const direct = candidate.match(/https?:\/\/[^\s"'<>]+/i);
+  if (direct) return clean(direct[0]);
+  const bare = candidate.match(/(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/\S*)?/);
+  if (bare && /[a-zA-Z]/.test(bare[0])) return `https://${clean(bare[0])}`;
+  return undefined;
+}
+
 type SheetStructure = {
   headerRowIdx: number;
   baseCol: number;      // columna donde inician las acciones (Compartio)
@@ -245,6 +262,7 @@ function buildMonthData(
   for (const row of dataRows) {
     const name = row[2].trim();
     const equipo = normalizeTeamName(row[1]);
+    const profileLink = extractProfileLink(row[3]);
     let totalPoints = 0;
     const historyByDate: DayRecord[] = [];
 
@@ -271,7 +289,7 @@ function buildMonthData(
       });
     }
 
-    rankingMap[name] = { name, equipo, totalPoints, historyByDate };
+    rankingMap[name] = { name, equipo, profileLink, totalPoints, historyByDate };
   }
 
   const ranking = Object.values(rankingMap).sort((a, b) => b.totalPoints - a.totalPoints);

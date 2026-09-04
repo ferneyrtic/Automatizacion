@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   X, Calendar, CheckCircle, XCircle, ChevronDown, ChevronUp,
-  Share2, MessageSquare, ThumbsUp, Check,
+  Share2, MessageSquare, ThumbsUp, Check, ExternalLink,
 } from 'lucide-react';
 import type { UserRanking, ActionPoints } from '@/lib/googleSheets';
 
@@ -73,6 +73,18 @@ export default function HistorialModal({ user, onClose, points }: HistorialModal
 
         {/* Cuerpo */}
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+
+          {user.profileLink && (
+            <a
+              href={user.profileLink}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-4 flex w-full items-center justify-center gap-2 bg-gradient-primary text-white text-sm sm:text-base font-bold px-5 py-3 rounded-xl shadow-md hover:shadow-xl hover:brightness-110 active:scale-[0.98] transition-all"
+            >
+              <ExternalLink size={18} className="shrink-0" />
+              Ver perfil en redes sociales
+            </a>
+          )}
 
           {/* Banner participación completa */}
           {participacionCompleta && (
