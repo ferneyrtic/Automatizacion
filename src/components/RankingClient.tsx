@@ -141,9 +141,10 @@ function PublicationPanel({
                 href={pub.link}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline mt-1"
+                className="mt-3 inline-flex items-center justify-center gap-2 w-full sm:w-auto bg-gradient-primary text-white text-sm sm:text-base font-bold px-5 py-2.5 rounded-xl shadow-md hover:shadow-xl hover:brightness-110 active:scale-[0.98] transition-all"
               >
-                <ExternalLink size={11} /> Ver publicación
+                <ExternalLink size={16} className="shrink-0" />
+                Ver publicación
               </a>
             )}
           </div>
