@@ -78,18 +78,24 @@ const DEFAULT_POINTS: ActionPoints = { shared: 15, commented: 20, reacted: 10 };
 
 /**
  * Interpreta una celda de acción de la hoja.
- * Antes se marcaba con "X"; ahora el valor de la casilla ES el puntaje
- * ganado (10, 15, 20, ...). Por compatibilidad, una "X" equivale al
- * puntaje estándar de esa acción (el del encabezado de la pestaña).
+ * Cada acción tiene un valor de puntaje esperado (ej. 15 compartir, 20 comentar, 10 reaccionar).
+ * - "X" equivale al puntaje estándar esperado.
+ * - Si se ingresó un número, debe coincidir exactamente con expectedPoints.
+ * - Si no coincide (ej. error de digitación como poner 100 en vez de 10),
+ *   se descarta y se marca con 0 puntos.
  */
-function parseActionCell(raw: string | undefined, defaultPoints: number): { done: boolean; points: number } {
+function parseActionCell(raw: string | undefined, expectedPoints: number): { done: boolean; points: number } {
   const value = (raw || '').trim();
   if (!value) return { done: false, points: 0 };
-  if (value.toUpperCase() === 'X') return { done: true, points: defaultPoints };
+  if (value.toUpperCase() === 'X') return { done: true, points: expectedPoints };
   const numeric = parseFloat(value.replace(/\s+/g, '').replace(',', '.'));
   if (!isNaN(numeric)) {
     const points = Math.round(numeric);
-    return points > 0 ? { done: true, points } : { done: false, points: 0 };
+    // Validación estricta: si no coincide con lo que debe valer la acción, se marca como 0 (error de digitación)
+    if (points === expectedPoints && points > 0) {
+      return { done: true, points: expectedPoints };
+    }
+    return { done: false, points: 0 };
   }
   return { done: false, points: 0 };
 }
