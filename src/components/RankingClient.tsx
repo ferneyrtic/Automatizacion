@@ -17,28 +17,30 @@ import AnalyticsModal from '@/components/AnalyticsModal';
 
 // ─── Tipos y constantes de filtro por acción ─────────────────────────────────
 
-type ActionFilter = 'all' | 'shared' | 'commented' | 'reacted';
+type ActionFilter = 'all' | 'shared' | 'commented' | 'reacted' | 'unparticipated';
 
-const ACTION_KEYS: ActionFilter[] = ['all', 'shared', 'commented', 'reacted'];
+const ACTION_KEYS: ActionFilter[] = ['all', 'shared', 'commented', 'reacted', 'unparticipated'];
 
 const ACTION_LABELS: Record<ActionFilter, string> = {
   all: 'Todos',
   shared: 'Compartidos',
   commented: 'Comentarios',
   reacted: 'Reacciones',
+  unparticipated: 'No participaron',
 };
 
-const ACTION_CHIPS: Record<Exclude<ActionFilter, 'all'>, { label: string; pts: number; Icon: typeof Share2; cls: string }> = {
+const ACTION_CHIPS: Record<'shared' | 'commented' | 'reacted', { label: string; pts: number; Icon: typeof Share2; cls: string }> = {
   shared:    { label: 'Compartió', pts: 15, Icon: Share2,        cls: 'bg-blue-50 text-[var(--primary)] border-blue-100' },
   commented: { label: 'Comentó',   pts: 20, Icon: MessageSquare, cls: 'bg-amber-50 text-[var(--secondary)] border-amber-100' },
   reacted:   { label: 'Reaccionó', pts: 10, Icon: ThumbsUp,      cls: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
 };
 
 const EMPTY_MESSAGES: Record<ActionFilter, string> = {
-  all:       'No hay participantes en esta publicación.',
-  shared:    'No hay participantes que hayan compartido esta publicación.',
-  commented: 'No hay participantes que hayan comentado esta publicación.',
-  reacted:   'No hay participantes que hayan reaccionado a esta publicación.',
+  all:            'No hay participantes en esta publicación.',
+  shared:         'No hay participantes que hayan compartido esta publicación.',
+  commented:      'No hay participantes que hayan comentado esta publicación.',
+  reacted:        'No hay participantes que hayan reaccionado a esta publicación.',
+  unparticipated: 'Todos los participantes registraron actividad en esta publicación.',
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -50,6 +52,7 @@ function getInitials(name: string) {
 
 function pointsForFilter(day: DayRecord, f: ActionFilter): number {
   if (f === 'all') return day.pointsEarned;
+  if (f === 'unparticipated') return 0;
   if (!day[f]) return 0;
   if (f === 'shared') return day.sharedPoints;
   if (f === 'commented') return day.commentedPoints;
@@ -237,24 +240,42 @@ export default function RankingClient({ months }: Props) {
 
   const activeUsers = ranking.filter(u => (u.totalPoints || 0) > 0).length;
 
-  // Participantes con actividad en la publicación seleccionada (una fila por persona).
+  // Todos los participantes para la publicación seleccionada (incluyendo quienes no realizaron acciones).
   const publicationRows = useMemo(() => {
     if (!selectedPublication) return [];
-    return ranking
-      .map(user => {
-        const day = user.historyByDate?.find(d => d.publicationId === selectedPublication.id);
-        return day && (day.shared || day.commented || day.reacted) ? { user, day } : null;
-      })
-      .filter((x): x is { user: UserRanking; day: DayRecord } => x !== null);
+    return ranking.map(user => {
+      const day = user.historyByDate?.find(d => d.publicationId === selectedPublication.id) ?? {
+        publicationId: selectedPublication.id,
+        date: selectedPublication.date,
+        publicationName: selectedPublication.name,
+        publicationLink: selectedPublication.link,
+        shared: false,
+        commented: false,
+        reacted: false,
+        sharedPoints: 0,
+        commentedPoints: 0,
+        reactedPoints: 0,
+        pointsEarned: 0,
+      };
+      return { user, day };
+    });
   }, [ranking, selectedPublication]);
 
   const actionCounts = useMemo(() => {
-    const counts: Record<ActionFilter, number> = { all: 0, shared: 0, commented: 0, reacted: 0 };
+    const counts: Record<ActionFilter, number> = {
+      all: 0,
+      shared: 0,
+      commented: 0,
+      reacted: 0,
+      unparticipated: 0,
+    };
     for (const { day } of publicationRows) {
       counts.all++;
+      const hasAction = day.shared || day.commented || day.reacted;
       if (day.shared) counts.shared++;
       if (day.commented) counts.commented++;
       if (day.reacted) counts.reacted++;
+      if (!hasAction) counts.unparticipated++;
     }
     return counts;
   }, [publicationRows]);
@@ -281,7 +302,13 @@ export default function RankingClient({ months }: Props) {
   const visibleRows = useMemo(() => {
     if (!selectedPublication) return [];
     const rows = publicationRows
-      .filter(r => selectedAction === 'all' || r.day[selectedAction])
+      .filter(r => {
+        if (selectedAction === 'all') return true;
+        if (selectedAction === 'unparticipated') {
+          return !r.day.shared && !r.day.commented && !r.day.reacted;
+        }
+        return r.day[selectedAction];
+      })
       .filter(r => r.user.name.toLowerCase().includes(search.toLowerCase()));
     const dir = pointsSort === 'asc' ? -1 : 1;
     rows.sort((a, b) =>
@@ -292,12 +319,22 @@ export default function RankingClient({ months }: Props) {
   }, [publicationRows, selectedPublication, selectedAction, search, pointsSort]);
 
   const globalActionCounts = useMemo(() => {
-    const counts: Record<ActionFilter, number> = { all: ranking.length, shared: 0, commented: 0, reacted: 0 };
+    const counts: Record<ActionFilter, number> = {
+      all: ranking.length,
+      shared: 0,
+      commented: 0,
+      reacted: 0,
+      unparticipated: 0,
+    };
     for (const user of ranking) {
+      let userHasAny = false;
       for (const day of user.historyByDate || []) {
-        if (day.shared) counts.shared++;
-        if (day.commented) counts.commented++;
-        if (day.reacted) counts.reacted++;
+        if (day.shared) { counts.shared++; userHasAny = true; }
+        if (day.commented) { counts.commented++; userHasAny = true; }
+        if (day.reacted) { counts.reacted++; userHasAny = true; }
+      }
+      if (!userHasAny || (user.totalPoints || 0) === 0) {
+        counts.unparticipated++;
       }
     }
     return counts;
@@ -306,6 +343,16 @@ export default function RankingClient({ months }: Props) {
   const globalActionRows = useMemo(() => {
     const action = globalAction === 'all' ? null : globalAction;
     if (!action) return [] as { user: UserRanking; count: number; points: number }[];
+
+    if (action === 'unparticipated') {
+      const rows = ranking
+        .filter(u => (u.totalPoints || 0) === 0)
+        .filter(u => u.name.toLowerCase().includes(search.toLowerCase()))
+        .map(user => ({ user, count: 0, points: 0 }));
+      rows.sort((a, b) => a.user.name.localeCompare(b.user.name));
+      return rows;
+    }
+
     const rows = ranking
       .map(user => {
         let count = 0;
@@ -534,47 +581,62 @@ export default function RankingClient({ months }: Props) {
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right w-24">Estado</span>
                 </div>
 
-                {visibleRows.map(({ user, day }, index) => (
-                  <div
-                    key={user.name}
-                    onClick={() => setSelectedUser(user)}
-                    className="grid grid-cols-[56px_minmax(0,1fr)_auto_auto_auto] items-center px-5 py-3 border-b border-[var(--border)] last:border-0 hover:bg-blue-50/30 transition-colors cursor-pointer group"
-                  >
-                    <div className="flex justify-center">
-                      <span className="text-sm font-medium text-gray-400 tabular-nums">{index + 1}</span>
-                    </div>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                        {getInitials(user.name)}
+                {visibleRows.map(({ user, day }, index) => {
+                  const tieneActividad = day.shared || day.commented || day.reacted;
+                  const pts = pointsForFilter(day, selectedAction);
+                  return (
+                    <div
+                      key={user.name}
+                      onClick={() => setSelectedUser(user)}
+                      className="grid grid-cols-[56px_minmax(0,1fr)_auto_auto_auto] items-center px-5 py-3 border-b border-[var(--border)] last:border-0 hover:bg-blue-50/30 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex justify-center">
+                        <span className="text-sm font-medium text-gray-400 tabular-nums">{index + 1}</span>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate group-hover:text-[var(--primary)] transition-colors">
-                          {user.name}
-                        </p>
-                        <p className="text-xs text-gray-400 truncate">{user.equipo}</p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                          {getInitials(user.name)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate group-hover:text-[var(--primary)] transition-colors">
+                            {user.name}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">{user.equipo}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1 justify-end max-w-[200px]">
-                      {(selectedAction === 'all' ? (['shared', 'commented', 'reacted'] as const) : [selectedAction]).map(k => {
-                        if (!day[k]) return null;
-                        const chip = ACTION_CHIPS[k];
-                        const pts = k === 'shared' ? day.sharedPoints : k === 'commented' ? day.commentedPoints : day.reactedPoints;
-                        return (
-                          <span key={k} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${chip.cls}`}>
-                            <chip.Icon size={11} />
-                            {chip.label} <span className="opacity-70">+{pts}</span>
+                      <div className="flex flex-wrap gap-1 justify-end max-w-[200px]">
+                        {!tieneActividad ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-medium bg-gray-50 text-gray-400 border-gray-200">
+                            Sin participación
                           </span>
-                        );
-                      })}
+                        ) : (
+                          (selectedAction === 'all' || selectedAction === 'unparticipated'
+                            ? (['shared', 'commented', 'reacted'] as const)
+                            : [selectedAction]
+                          ).map(k => {
+                            if (!day[k]) return null;
+                            const chip = ACTION_CHIPS[k];
+                            const chipPts = k === 'shared' ? day.sharedPoints : k === 'commented' ? day.commentedPoints : day.reactedPoints;
+                            return (
+                              <span key={k} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${chip.cls}`}>
+                                <chip.Icon size={11} />
+                                {chip.label} <span className="opacity-70">+{chipPts}</span>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                      <span className={`text-sm font-semibold tabular-nums text-right pr-4 ${
+                        pts > 0 ? 'text-gray-700' : 'text-gray-400'
+                      }`}>
+                        {pts}
+                      </span>
+                      <div className="text-right w-24">
+                        <EstadoBadge activo={tieneActividad} />
+                      </div>
                     </div>
-                    <span className="text-sm font-semibold tabular-nums text-right text-gray-700 pr-4">
-                      {pointsForFilter(day, selectedAction)}
-                    </span>
-                    <div className="text-right w-24">
-                      <EstadoBadge activo={(user.totalPoints || 0) > 0} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {visibleRows.length === 0 && (
                   <div className="py-14 text-center text-gray-400">
@@ -711,9 +773,9 @@ export default function RankingClient({ months }: Props) {
         <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 gap-2 px-1 pb-6">
           <span>
             {selectedPublication
-              ? `Total: ${publicationRows.length} participantes en esta publicación`
+              ? `Total: ${visibleRows.length} de ${publicationRows.length} participantes · ${actionCounts.unparticipated} sin participar`
               : globalAction !== 'all'
-                ? `Total: ${globalActionRows.length} participantes · ${globalActionCounts[globalAction]} ${ACTION_LABELS[globalAction].toLowerCase()} en total`
+                ? `Total: ${globalActionRows.length} participantes · ${globalAction === 'unparticipated' ? `${globalActionCounts.unparticipated} sin actividad en el mes` : `${globalActionCounts[globalAction]} ${ACTION_LABELS[globalAction].toLowerCase()} en total`}`
                 : `Total: ${ranking.length} participantes`}
           </span>
           <span className="flex items-center gap-1.5">
