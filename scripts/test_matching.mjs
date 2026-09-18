@@ -16,41 +16,48 @@ function cleanUrlForMatching(url) {
   return url.toLowerCase().trim().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
 }
 
-function isNameMatch(contractorName, fbName) {
-  if (!contractorName || !fbName) return false;
-  const c = normalizeStr(contractorName);
-  const fb = normalizeStr(fbName);
-  if (c === fb) return true;
-  const fbWords = fb.split(/\s+/).filter(w => w.length > 2);
-  const cWords = c.split(/\s+/).filter(w => w.length > 2);
-  if (fbWords.length >= 2 && cWords.length >= 2) {
-    const allFbInC = fbWords.every(w => cWords.includes(w));
-    if (allFbInC) return true;
-    let matches = 0;
-    for (const w of fbWords) {
-      if (cWords.includes(w)) matches++;
-    }
-    if (matches >= 2) return true;
+function cleanFbDisplayName(name) {
+  if (!name) return '';
+  return name
+    .split('\n')[0]
+    .replace(/·.*$/, '')
+    .replace(/\s*\(.*?\)\s*/g, ' ')
+    .trim();
+}
+
+function isContractorMatch(contractor, item) {
+  if (!item || !item.name) return false;
+
+  const itemUrl = cleanUrlForMatching(item.url);
+  const cUrl = cleanUrlForMatching(contractor.profileLink);
+
+  if (cUrl && itemUrl && cUrl === itemUrl) {
+    return true;
   }
+
+  const itemNameNorm = normalizeStr(cleanFbDisplayName(item.name));
+  const fbAccount = contractor.fbAccountName ? normalizeStr(contractor.fbAccountName) : '';
+  const cName = normalizeStr(contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, ''));
+
+  if (fbAccount) {
+    if (itemNameNorm === fbAccount) return true;
+    const itemWords = itemNameNorm.split(/\s+/).filter(Boolean);
+    const fbWords = fbAccount.split(/\s+/).filter(Boolean);
+    if (itemWords.length === fbWords.length && itemWords.every((w, i) => w === fbWords[i])) {
+      return true;
+    }
+    return false;
+  }
+
+  if (cName && itemNameNorm === cName) {
+    return true;
+  }
+
   return false;
 }
 
 function matchItem(item, contractor) {
-  const cUrl = cleanUrlForMatching(contractor.profileLink);
-  const cName = contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, '').trim();
-  const fbAccount = (contractor.fbAccountName || '').trim();
-
-  const itemUrl = cleanUrlForMatching(item.url);
-  if (cUrl && itemUrl && cUrl === itemUrl) return true;
-
-  if (fbAccount) {
-    if (normalizeStr(fbAccount) === normalizeStr(item.name)) return true;
-    if (isNameMatch(fbAccount, item.name)) return true;
-  }
-
-  if (isNameMatch(cName, item.name)) return true;
-
-  return false;
+  return isContractorMatch(contractor, item);
 }
 
 // Test cases

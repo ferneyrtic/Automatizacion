@@ -63,12 +63,23 @@ function getTodayFormatted() {
   return `${day}/${month}/${year}`;
 }
 
-// ── Normalizador de Strings (sin tildes, minúsculas) ──
+// ── Normalizador de Strings (sin tildes, minúsculas, sin comillas) ──
 function normalizeStr(str) {
   return (str || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['"’`]/g, '')
+    .trim();
+}
+
+// ── Limpiador de texto de nombres mostrados en Facebook ──
+function cleanFbDisplayName(name) {
+  if (!name) return '';
+  return name
+    .split('\n')[0]
+    .replace(/·.*$/, '')
+    .replace(/\s*\(.*?\)\s*/g, ' ')
     .trim();
 }
 
@@ -97,28 +108,38 @@ function cleanUrlForMatching(url) {
   return url.toLowerCase().trim().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
 }
 
-// ── Comparador de Nombres con Tolerancia (Primer Nombre + Apellido) ──
-function isNameMatch(contractorName, fbName) {
-  if (!contractorName || !fbName) return false;
-  const c = normalizeStr(contractorName);
-  const fb = normalizeStr(fbName);
+// ── Comparador Estricto de Contratistas (Evita Falsos Positivos de Ciudadanos) ──
+function isContractorMatch(contractor, item) {
+  if (!item || !item.name) return false;
 
-  if (c === fb) return true;
+  const itemUrl = cleanUrlForMatching(item.url);
+  const cUrl = cleanUrlForMatching(contractor.profileLink);
 
-  const fbWords = fb.split(/\s+/).filter(w => w.length > 2);
-  const cWords = c.split(/\s+/).filter(w => w.length > 2);
+  // 1. Coincidencia por URL limpia exacta
+  if (cUrl && itemUrl && cUrl === itemUrl) {
+    return true;
+  }
 
-  if (fbWords.length >= 2 && cWords.length >= 2) {
-    // Si todas las palabras de fb están contenidas en el contratista (ej. "Cindy Herrera" en "Cindy Sorley Herrera Latorre")
-    const allFbInC = fbWords.every(w => cWords.includes(w));
-    if (allFbInC) return true;
+  const itemNameNorm = normalizeStr(cleanFbDisplayName(item.name));
+  const fbAccount = contractor.fbAccountName ? normalizeStr(contractor.fbAccountName) : '';
+  const cName = normalizeStr(contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, ''));
 
-    // Si al menos 2 palabras clave coinciden (ej. Nombre + Apellido)
-    let matches = 0;
-    for (const w of fbWords) {
-      if (cWords.includes(w)) matches++;
+  // 2. Si el contratista tiene nombre de cuenta en Columna F:
+  // Coincidencia exacta con su cuenta oficial de Facebook (evita homónimos ciudadanos)
+  if (fbAccount) {
+    if (itemNameNorm === fbAccount) return true;
+    const itemWords = itemNameNorm.split(/\s+/).filter(Boolean);
+    const fbWords = fbAccount.split(/\s+/).filter(Boolean);
+    if (itemWords.length === fbWords.length && itemWords.every((w, i) => w === fbWords[i])) {
+      return true;
     }
-    if (matches >= 2) return true;
+    return false;
+  }
+
+  // 3. Si el contratista no tiene Columna F (sin cuenta / no participa):
+  // Solo coincidencia exacta con el nombre legal completo
+  if (cName && itemNameNorm === cName) {
+    return true;
   }
 
   return false;
@@ -260,37 +281,14 @@ function processResults(scan) {
   let totalPts = 0;
 
   officialContractors.forEach(contractor => {
-    const cUrl = cleanUrlForMatching(contractor.profileLink);
-    const cName = contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, '').trim();
-    const fbAccount = (contractor.fbAccountName || '').trim();
+    // Verificar si reaccionó (exclusivamente si está en la lista de reacciones y coincide con este contratista)
+    const reacted = rawReactions.some(r => isContractorMatch(contractor, r));
 
-    const checkMatch = (item) => {
-      if (!item) return false;
-      const itemUrl = cleanUrlForMatching(item.url);
-
-      // 1. Coincidencia por URL limpia exacta
-      if (cUrl && itemUrl && cUrl === itemUrl) return true;
-
-      // 2. Coincidencia directa o por palabras con el Nombre de Perfil de Facebook (Columna F)
-      if (fbAccount) {
-        if (normalizeStr(fbAccount) === normalizeStr(item.name)) return true;
-        if (isNameMatch(fbAccount, item.name)) return true;
-      }
-
-      // 3. Coincidencia con el Nombre oficial del contrato (con tolerancia)
-      if (isNameMatch(cName, item.name)) return true;
-
-      return false;
-    };
-
-    // Verificar si reaccionó (por URL o nombre de cuenta de Facebook)
-    const reacted = rawReactions.some(checkMatch);
-
-    // Verificar si comentó (por URL o nombre de cuenta de Facebook)
-    const commented = rawComments.some(checkMatch);
+    // Verificar si comentó (exclusivamente si está en la lista de comentarios y coincide con este contratista)
+    const commented = rawComments.some(c => isContractorMatch(contractor, c));
 
     // Verificar si compartió
-    const shared = rawShares.some(checkMatch);
+    const shared = rawShares.some(s => isContractorMatch(contractor, s));
 
     if (reacted || commented || shared) {
       let points = 0;
