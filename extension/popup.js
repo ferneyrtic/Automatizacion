@@ -229,7 +229,10 @@ btnStartScan.addEventListener('click', async () => {
   chrome.runtime.onMessage.addListener(progressListener);
 
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'START_SCAN' });
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'START_SCAN',
+      targetContractors: officialContractors,
+    });
     chrome.runtime.onMessage.removeListener(progressListener);
 
     if (response && response.success) {
@@ -247,7 +250,7 @@ btnStartScan.addEventListener('click', async () => {
   }
 });
 
-// ── Procesar y Cruzar con Lista Oficial de Contratistas ──
+// ── Procesar y Cruzar con Lista Oficial de Contratistas (Prioridad Columna F) ──
 function processResults(scan) {
   const rawReactions = scan.reactions || [];
   const rawComments = scan.comments || [];
@@ -259,27 +262,35 @@ function processResults(scan) {
   officialContractors.forEach(contractor => {
     const cUrl = cleanUrlForMatching(contractor.profileLink);
     const cName = contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, '').trim();
+    const fbAccount = (contractor.fbAccountName || '').trim();
 
-    // Verificar si reaccionó (por URL exacta o por nombre)
-    const reacted = rawReactions.some(r => {
-      const rUrl = cleanUrlForMatching(r.url);
-      const urlMatch = cUrl && rUrl && cUrl === rUrl;
-      return urlMatch || isNameMatch(cName, r.name);
-    });
+    const checkMatch = (item) => {
+      if (!item) return false;
+      const itemUrl = cleanUrlForMatching(item.url);
 
-    // Verificar si comentó (por URL exacta o por nombre)
-    const commented = rawComments.some(c => {
-      const comUrl = cleanUrlForMatching(c.url);
-      const urlMatch = cUrl && comUrl && cUrl === comUrl;
-      return urlMatch || isNameMatch(cName, c.name);
-    });
+      // 1. Coincidencia por URL limpia exacta
+      if (cUrl && itemUrl && cUrl === itemUrl) return true;
+
+      // 2. Coincidencia directa o por palabras con el Nombre de Perfil de Facebook (Columna F)
+      if (fbAccount) {
+        if (normalizeStr(fbAccount) === normalizeStr(item.name)) return true;
+        if (isNameMatch(fbAccount, item.name)) return true;
+      }
+
+      // 3. Coincidencia con el Nombre oficial del contrato (con tolerancia)
+      if (isNameMatch(cName, item.name)) return true;
+
+      return false;
+    };
+
+    // Verificar si reaccionó (por URL o nombre de cuenta de Facebook)
+    const reacted = rawReactions.some(checkMatch);
+
+    // Verificar si comentó (por URL o nombre de cuenta de Facebook)
+    const commented = rawComments.some(checkMatch);
 
     // Verificar si compartió
-    const shared = rawShares.some(s => {
-      const sUrl = cleanUrlForMatching(s.url);
-      const urlMatch = cUrl && sUrl && cUrl === sUrl;
-      return urlMatch || isNameMatch(cName, s.name);
-    });
+    const shared = rawShares.some(checkMatch);
 
     if (reacted || commented || shared) {
       let points = 0;
@@ -293,6 +304,8 @@ function processResults(scan) {
         name: contractor.name,
         equipo: contractor.equipo || 'TIC',
         profileLink: contractor.profileLink,
+        fbAccountName: contractor.fbAccountName || '',
+        hasAccount: contractor.hasAccount !== false,
         rowIdx: contractor.rowIdx,
         shared,
         commented,
@@ -317,7 +330,7 @@ function processResults(scan) {
 
   const scanNote = document.getElementById('scanNote');
   if (scanNote) {
-    scanNote.innerHTML = `✓ De ${rawComments.length} comentarios y ${rawReactions.length} likes en Facebook, se filtraron exclusivamente los ${matchedParticipants.length} contratistas válidos de la Alcaldía.`;
+    scanNote.innerHTML = `✓ De ${rawComments.length} comentarios y ${rawReactions.length} likes en Facebook, se identificaron exclusivamente los ${matchedParticipants.length} contratistas auditados.`;
   }
 
   renderParticipantsList(matchedParticipants);
@@ -340,6 +353,7 @@ function renderParticipantsList(list) {
 
   list.forEach(p => {
     const initials = p.name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
+    const hasDiffFbName = p.fbAccountName && normalizeStr(p.fbAccountName) !== normalizeStr(p.name);
     const row = document.createElement('div');
     row.className = 'participant-row';
     row.innerHTML = `
@@ -347,7 +361,11 @@ function renderParticipantsList(list) {
         <div class="p-avatar">${initials}</div>
         <div class="p-info">
           <span class="p-name" title="${p.name}">${p.name}</span>
-          <span class="p-team">${p.equipo}</span>
+          <div class="p-meta">
+            <span class="p-team">${p.equipo}</span>
+            ${hasDiffFbName ? `<span class="p-fb-name" title="Cuenta en Facebook: ${p.fbAccountName}">👤 ${p.fbAccountName}</span>` : ''}
+            ${!p.hasAccount ? '<span class="p-no-account" title="Sin cuenta de Facebook registrada en el Excel (0 pts)">Sin cuenta FB</span>' : ''}
+          </div>
         </div>
       </div>
       <div class="p-badges">
@@ -361,10 +379,14 @@ function renderParticipantsList(list) {
   });
 }
 
-// ── Filtro de Búsqueda ──
+// ── Filtro de Búsqueda (Soporta Nombre de Contrato y Nombre en Facebook) ──
 participantSearch.addEventListener('input', (e) => {
   const q = e.target.value.toLowerCase().trim();
-  const filtered = matchedParticipants.filter(p => p.name.toLowerCase().includes(q) || p.equipo.toLowerCase().includes(q));
+  const filtered = matchedParticipants.filter(p => 
+    p.name.toLowerCase().includes(q) || 
+    p.equipo.toLowerCase().includes(q) ||
+    (p.fbAccountName && p.fbAccountName.toLowerCase().includes(q))
+  );
   renderParticipantsList(filtered);
 });
 

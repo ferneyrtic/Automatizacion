@@ -68,21 +68,49 @@ export async function GET() {
       name: string;
       equipo: string;
       profileLink: string;
+      fbAccountName: string;
+      isPublicProfile: boolean;
+      hasAccount: boolean;
       rowIdx: number;
     }> = [];
 
     if (headerRowIdx >= 0) {
+      const headerRow = rows[headerRowIdx] || [];
+      const equipoCol = headerRow.findIndex(c => /^equipo$/i.test(String(c).trim())) >= 0
+        ? headerRow.findIndex(c => /^equipo$/i.test(String(c).trim()))
+        : 1;
+      const nameCol = headerRow.findIndex(c => /^contratista$/i.test(String(c).trim())) >= 0
+        ? headerRow.findIndex(c => /^contratista$/i.test(String(c).trim()))
+        : 2;
+      const profileLinkCol = headerRow.findIndex(c => /^perfil$/i.test(String(c).trim())) >= 0
+        ? headerRow.findIndex(c => /^perfil$/i.test(String(c).trim()))
+        : 3;
+      
+      let fbAccountCol = headerRow.findIndex(c => /nombre\s*(?:del?\s*)?perfil/i.test(String(c).trim()));
+      if (fbAccountCol < 0) {
+        fbAccountCol = 5; // Columna F por defecto
+      }
+
+      const publicProfileCol = headerRow.findIndex(c => /perfil\s*p[uú]blico/i.test(String(c).trim()));
+
       for (let r = headerRowIdx + 1; r < rows.length; r++) {
         const row = rows[r] || [];
-        const name = String(row[2] || '').trim();
-        const equipo = String(row[1] || '').trim();
-        const profileLink = String(row[3] || '').trim();
+        const name = String(row[nameCol] || '').trim();
+        const equipo = String(row[equipoCol] || '').trim();
+        const profileLink = String(row[profileLinkCol] || '').trim();
+        const fbAccountName = fbAccountCol >= 0 ? String(row[fbAccountCol] || '').trim() : '';
+        const publicVal = publicProfileCol >= 0 ? String(row[publicProfileCol] || '').trim().toUpperCase() : '';
+        const isPublicProfile = publicVal === 'SI' || publicVal === 'SÍ';
 
         if (name) {
+          const hasAccount = Boolean(fbAccountName || (profileLink && profileLink.includes('facebook.com')));
           contractors.push({
             name,
             equipo: equipo || 'TIC',
             profileLink,
+            fbAccountName,
+            isPublicProfile,
+            hasAccount,
             rowIdx: r + 1, // 1-based para A1 notation en Sheets
           });
         }

@@ -62,8 +62,42 @@
     'minuto', 'minutos', 'hora', 'horas', 'dia', 'dias', 'día', 'días', 'sem', 'semana'
   ];
 
+  // ── Personalización de Contratistas Objetivos (Columna F) ──
+  let targetNamesMap = new Map(); // normalized name -> original name
+  let targetUrlsSet = new Set();
+
+  function initTargets(contractors) {
+    targetNamesMap.clear();
+    targetUrlsSet.clear();
+    if (!Array.isArray(contractors)) return;
+
+    contractors.forEach(c => {
+      if (c.fbAccountName) {
+        const norm = normalizeText(c.fbAccountName);
+        if (norm) targetNamesMap.set(norm, c.fbAccountName);
+      }
+      if (c.name) {
+        const norm = normalizeText(c.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, ''));
+        if (norm) targetNamesMap.set(norm, c.name);
+      }
+      if (c.profileLink) {
+        const cu = cleanFacebookUrl(c.profileLink);
+        if (cu) targetUrlsSet.add(cu);
+      }
+    });
+  }
+
+  function isTargetContractor(name, url) {
+    if (url && targetUrlsSet.has(cleanFacebookUrl(url))) return true;
+    if (!name) return false;
+    const norm = normalizeText(name);
+    return targetNamesMap.has(norm);
+  }
+
   function isSystemName(name) {
-    if (!name || name.length < 3) return true;
+    if (!name) return true;
+    if (isTargetContractor(name)) return false; // Si es un contratista conocido, nunca es del sistema
+    if (name.length < 3) return true;
     const norm = normalizeText(name);
     if (SYSTEM_WORDS.some(w => norm === w || norm.startsWith('responder') || norm.startsWith('hace '))) return true;
     if (/^\d+\s*(h|d|min|sem|días|dias)/i.test(norm)) return true;
@@ -82,7 +116,7 @@
     return name;
   }
 
-  // ── Extracción 100% Pasiva de Comentarios ──
+  // ── Extracción 100% Pasiva y Personalizada de Comentarios ──
   function extractAllVisibleComments() {
     const commentsMap = new Map(); // Key: normalized name -> { name, url }
 
@@ -92,7 +126,7 @@
       if (isSystemName(cleanName)) return;
 
       const normKey = normalizeText(cleanName);
-      if (normKey.length < 3) return;
+      if (normKey.length < 2) return;
 
       const cleanUrl = cleanFacebookUrl(rawUrl);
 
@@ -121,7 +155,7 @@
       anchors.forEach(a => {
         const name = extractNameFromElement(a);
         const href = a.getAttribute ? a.getAttribute('href') : '';
-        if (name && !isSystemName(name)) {
+        if (name && (isTargetContractor(name, href) || (name.split(/\s+/).length >= 2 && !isSystemName(name)))) {
           addCommenter(name, href);
         }
       });
@@ -130,7 +164,7 @@
       const boldSpans = art.querySelectorAll('strong, span[dir="auto"] > span, span[style*="font-weight"]');
       boldSpans.forEach(s => {
         const name = (s.innerText || '').trim();
-        if (name && name.split(/\s+/).length >= 2 && !isSystemName(name)) {
+        if (name && (isTargetContractor(name) || (name.split(/\s+/).length >= 2 && !isSystemName(name)))) {
           const parentAnchor = s.closest('a[href]');
           addCommenter(name, parentAnchor ? parentAnchor.getAttribute('href') : '');
         }
@@ -150,7 +184,7 @@
         anchors.forEach(a => {
           const name = extractNameFromElement(a);
           const href = a.getAttribute ? a.getAttribute('href') : '';
-          if (name && name.split(/\s+/).length >= 2 && !isSystemName(name)) {
+          if (name && (isTargetContractor(name, href) || (name.split(/\s+/).length >= 2 && !isSystemName(name)))) {
             addCommenter(name, href);
           }
         });
@@ -165,12 +199,25 @@
         const clean = cleanFacebookUrl(href);
         if (clean) {
           const name = extractNameFromElement(a);
-          if (name && name.split(/\s+/).length >= 2 && !isSystemName(name)) {
+          if (name && (isTargetContractor(name, href) || (name.split(/\s+/).length >= 2 && !isSystemName(name)))) {
             addCommenter(name, href);
           }
         }
       }
     });
+
+    // 4. Búsqueda específica directa de contratistas objetivos visibles en texto
+    if (targetNamesMap.size > 0) {
+      const candidateElements = document.querySelectorAll('a[role="link"], strong, span[dir="auto"]');
+      candidateElements.forEach(el => {
+        const txt = (el.innerText || el.textContent || '').trim();
+        if (txt && isTargetContractor(txt)) {
+          const parentA = el.closest('a[href]') || el;
+          const href = parentA.getAttribute ? parentA.getAttribute('href') : '';
+          addCommenter(txt, href);
+        }
+      });
+    }
 
     return Array.from(commentsMap.values());
   }
@@ -192,7 +239,7 @@
     anchors.forEach(a => {
       const name = extractNameFromElement(a);
       const href = a.getAttribute('href');
-      if (name && !isSystemName(name)) {
+      if (name && (isTargetContractor(name, href) || !isSystemName(name))) {
         const clean = cleanFacebookUrl(href);
         const normKey = normalizeText(name);
         if (!results.has(normKey)) {
@@ -201,12 +248,29 @@
       }
     });
 
+    // Escaneo específico dentro del diálogo de reacciones para contratistas objetivos
+    if (targetNamesMap.size > 0) {
+      const dialogSpans = reactionsDialog.querySelectorAll('span, strong, a');
+      dialogSpans.forEach(el => {
+        const txt = (el.innerText || el.textContent || '').trim();
+        if (txt && isTargetContractor(txt)) {
+          const parentA = el.closest('a[href]');
+          const href = parentA ? parentA.getAttribute('href') : '';
+          const clean = href ? cleanFacebookUrl(href) : '';
+          const normKey = normalizeText(txt);
+          if (!results.has(normKey)) {
+            results.set(normKey, { name: txt, url: clean });
+          }
+        }
+      });
+    }
+
     return Array.from(results.values());
   }
 
   // ── Ejecutor Principal (Instantáneo y Pasivo) ──
   async function runScan(onProgress) {
-    if (onProgress) onProgress({ step: 'Capturando comentarios en pantalla...', percent: 40 });
+    if (onProgress) onProgress({ step: 'Auditando comentarios en pantalla...', percent: 40 });
 
     const comments = extractAllVisibleComments();
 
@@ -253,6 +317,9 @@
     }
 
     if (message.action === 'START_SCAN') {
+      if (message.targetContractors) {
+        initTargets(message.targetContractors);
+      }
       runScan((update) => {
         chrome.runtime.sendMessage({ action: 'SCAN_PROGRESS', data: update }).catch(() => {});
       }).then(results => {
