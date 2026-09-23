@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "downloads"
   ],
   "host_permissions": [
     "https://*.facebook.com/*",
@@ -36,7 +37,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["contractors_default.json"],
+      "resources": ["contractors_default.json", "template.xlsx", "xlsx.full.min.js"],
       "matches": ["https://*.facebook.com/*"]
     }
   ]
