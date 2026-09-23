@@ -1,7 +1,8 @@
+import { redirect } from 'next/navigation';
 import { getRankingData, DEPARTMENTS } from '@/lib/googleSheets';
 import RankingClient from '@/components/RankingClient';
+import DepartmentSelector from '@/components/DepartmentSelector';
 
-// La página es dinámica (lee searchParams). El caché está en googleSheets.ts (in-memory, 5 min).
 export const dynamic = 'force-dynamic';
 
 interface PageProps {
@@ -11,9 +12,20 @@ interface PageProps {
 export default async function Home({ searchParams }: PageProps) {
   const { dep } = await searchParams;
 
-  // Busca la dependencia que coincida con el slug; si no existe o no se pasa, usa TIC (índice 0)
-  const activeDepartment =
-    DEPARTMENTS.find(d => d.slug === dep) ?? DEPARTMENTS[0];
+  // Sin parámetro → pantalla de selección de departamento
+  if (!dep) {
+    return (
+      <main className="min-h-screen">
+        <DepartmentSelector departments={DEPARTMENTS} />
+      </main>
+    );
+  }
+
+  // Departamento no reconocido → vuelve al selector
+  const activeDepartment = DEPARTMENTS.find(d => d.slug === dep);
+  if (!activeDepartment) {
+    redirect('/');
+  }
 
   const data = await getRankingData(activeDepartment.sheetId);
 

@@ -55,7 +55,7 @@ export default function Header({
         {/* Fila principal */}
         <div className="flex items-center justify-between py-3 gap-3 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="bg-blue-50 rounded-xl px-3 py-1.5 flex items-center">
+            <a href="/" className="bg-blue-50 rounded-xl px-3 py-1.5 flex items-center hover:bg-blue-100 transition-colors" title="Volver al selector">
               <Image
                 src="/logos/logo.png"
                 alt="Alcaldía de Acacías"
@@ -66,7 +66,7 @@ export default function Header({
                 priority
                 unoptimized
               />
-            </div>
+            </a>
 
             <div className="border-l border-gray-200 h-10 hidden sm:block" />
 
