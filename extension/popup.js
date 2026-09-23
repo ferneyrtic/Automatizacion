@@ -42,7 +42,7 @@ const participantsList = document.getElementById('participantsList');
 const participantSearch = document.getElementById('participantSearch');
 
 const btnCancelReview = document.getElementById('btnCancelReview');
-const btnSaveToSheets = document.getElementById('btnSaveToSheets');
+const btnSaveToSheets = document.getElementById('btnSaveToSheets'); btnSaveToSheets.disabled = true; btnSaveToSheets.title = 'Deshabilitado: usa solo descargar los datos extraídos';
 const btnScanAnother = document.getElementById('btnScanAnother');
 const successMessageDetails = document.getElementById('successMessageDetails');
 
@@ -63,12 +63,23 @@ function getTodayFormatted() {
   return `${day}/${month}/${year}`;
 }
 
-// ── Normalizador de Strings (sin tildes, minúsculas) ──
+// ── Normalizador de Strings (sin tildes, minúsculas, sin comillas) ──
 function normalizeStr(str) {
   return (str || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['"’`]/g, '')
+    .trim();
+}
+
+// ── Limpiador de texto de nombres mostrados en Facebook ──
+function cleanFbDisplayName(name) {
+  if (!name) return '';
+  return name
+    .split('\n')[0]
+    .replace(/·.*$/, '')
+    .replace(/\s*\(.*?\)\s*/g, ' ')
     .trim();
 }
 
@@ -97,28 +108,40 @@ function cleanUrlForMatching(url) {
   return url.toLowerCase().trim().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
 }
 
-// ── Comparador de Nombres con Tolerancia (Primer Nombre + Apellido) ──
-function isNameMatch(contractorName, fbName) {
-  if (!contractorName || !fbName) return false;
-  const c = normalizeStr(contractorName);
-  const fb = normalizeStr(fbName);
+// ── Comparador Estricto de Contratistas (Evita Falsos Positivos de Ciudadanos) ──
+function isContractorMatch(contractor, item) {
+  if (!item || !item.name) return false;
 
-  if (c === fb) return true;
+  const itemUrl = cleanUrlForMatching(item.url);
+  const cUrl = cleanUrlForMatching(contractor.profileLink);
 
-  const fbWords = fb.split(/\s+/).filter(w => w.length > 2);
-  const cWords = c.split(/\s+/).filter(w => w.length > 2);
+  // 1. Coincidencia por URL limpia exacta
+  if (cUrl && itemUrl && cUrl === itemUrl) {
+    return true;
+  }
 
-  if (fbWords.length >= 2 && cWords.length >= 2) {
-    // Si todas las palabras de fb están contenidas en el contratista (ej. "Cindy Herrera" en "Cindy Sorley Herrera Latorre")
-    const allFbInC = fbWords.every(w => cWords.includes(w));
-    if (allFbInC) return true;
+  const itemNameNorm = normalizeStr(cleanFbDisplayName(item.name));
+  const fbAccount = contractor.fbAccountName ? normalizeStr(contractor.fbAccountName) : '';
+  const cName = normalizeStr(contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, ''));
 
-    // Si al menos 2 palabras clave coinciden (ej. Nombre + Apellido)
-    let matches = 0;
-    for (const w of fbWords) {
-      if (cWords.includes(w)) matches++;
+  // 2. Si el contratista tiene nombre de cuenta en Columna F:
+  // Coincidencia exacta con su cuenta oficial de Facebook (evita homónimos ciudadanos)
+  if (fbAccount) {
+    if (itemNameNorm === fbAccount) return true;
+    const itemWords = itemNameNorm.split(/\s+/).filter(Boolean);
+    const fbWords = fbAccount.split(/\s+/).filter(Boolean);
+    if (itemWords.length === fbWords.length && itemWords.every((w, i) => w === fbWords[i])) {
+      return true;
     }
-    if (matches >= 2) return true;
+    // Allow fbAccountName to be a substring of the author's normalized name
+    if (itemNameNorm.includes(fbAccount)) return true;
+    return false;
+  }
+
+  // 3. Si el contratista no tiene Columna F (sin cuenta / no participa):
+  // Solo coincidencia exacta con el nombre legal completo
+  if (cName && itemNameNorm === cName) {
+    return true;
   }
 
   return false;
@@ -229,7 +252,10 @@ btnStartScan.addEventListener('click', async () => {
   chrome.runtime.onMessage.addListener(progressListener);
 
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'START_SCAN' });
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'START_SCAN',
+      targetContractors: officialContractors,
+    });
     chrome.runtime.onMessage.removeListener(progressListener);
 
     if (response && response.success) {
@@ -247,7 +273,7 @@ btnStartScan.addEventListener('click', async () => {
   }
 });
 
-// ── Procesar y Cruzar con Lista Oficial de Contratistas ──
+// ── Procesar y Cruzar con Lista Oficial de Contratistas (Prioridad Columna F) ──
 function processResults(scan) {
   const rawReactions = scan.reactions || [];
   const rawComments = scan.comments || [];
@@ -257,29 +283,14 @@ function processResults(scan) {
   let totalPts = 0;
 
   officialContractors.forEach(contractor => {
-    const cUrl = cleanUrlForMatching(contractor.profileLink);
-    const cName = contractor.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, '').trim();
+    // Verificar si reaccionó (exclusivamente si está en la lista de reacciones y coincide con este contratista)
+    const reacted = rawReactions.some(r => isContractorMatch(contractor, r));
 
-    // Verificar si reaccionó (por URL exacta o por nombre)
-    const reacted = rawReactions.some(r => {
-      const rUrl = cleanUrlForMatching(r.url);
-      const urlMatch = cUrl && rUrl && cUrl === rUrl;
-      return urlMatch || isNameMatch(cName, r.name);
-    });
-
-    // Verificar si comentó (por URL exacta o por nombre)
-    const commented = rawComments.some(c => {
-      const comUrl = cleanUrlForMatching(c.url);
-      const urlMatch = cUrl && comUrl && cUrl === comUrl;
-      return urlMatch || isNameMatch(cName, c.name);
-    });
+    // Verificar si comentó (exclusivamente si está en la lista de comentarios y coincide con este contratista)
+    const commented = rawComments.some(c => isContractorMatch(contractor, c));
 
     // Verificar si compartió
-    const shared = rawShares.some(s => {
-      const sUrl = cleanUrlForMatching(s.url);
-      const urlMatch = cUrl && sUrl && cUrl === sUrl;
-      return urlMatch || isNameMatch(cName, s.name);
-    });
+    const shared = rawShares.some(s => isContractorMatch(contractor, s));
 
     if (reacted || commented || shared) {
       let points = 0;
@@ -293,6 +304,8 @@ function processResults(scan) {
         name: contractor.name,
         equipo: contractor.equipo || 'TIC',
         profileLink: contractor.profileLink,
+        fbAccountName: contractor.fbAccountName || '',
+        hasAccount: contractor.hasAccount !== false,
         rowIdx: contractor.rowIdx,
         shared,
         commented,
@@ -317,7 +330,7 @@ function processResults(scan) {
 
   const scanNote = document.getElementById('scanNote');
   if (scanNote) {
-    scanNote.innerHTML = `✓ De ${rawComments.length} comentarios y ${rawReactions.length} likes en Facebook, se filtraron exclusivamente los ${matchedParticipants.length} contratistas válidos de la Alcaldía.`;
+    scanNote.innerHTML = `✓ De ${rawComments.length} comentarios y ${rawReactions.length} likes en Facebook, se identificaron exclusivamente los ${matchedParticipants.length} contratistas auditados.`;
   }
 
   renderParticipantsList(matchedParticipants);
@@ -340,6 +353,7 @@ function renderParticipantsList(list) {
 
   list.forEach(p => {
     const initials = p.name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
+    const hasDiffFbName = p.fbAccountName && normalizeStr(p.fbAccountName) !== normalizeStr(p.name);
     const row = document.createElement('div');
     row.className = 'participant-row';
     row.innerHTML = `
@@ -347,7 +361,11 @@ function renderParticipantsList(list) {
         <div class="p-avatar">${initials}</div>
         <div class="p-info">
           <span class="p-name" title="${p.name}">${p.name}</span>
-          <span class="p-team">${p.equipo}</span>
+          <div class="p-meta">
+            <span class="p-team">${p.equipo}</span>
+            ${hasDiffFbName ? `<span class="p-fb-name" title="Cuenta en Facebook: ${p.fbAccountName}">👤 ${p.fbAccountName}</span>` : ''}
+            ${!p.hasAccount ? '<span class="p-no-account" title="Sin cuenta de Facebook registrada en el Excel (0 pts)">Sin cuenta FB</span>' : ''}
+          </div>
         </div>
       </div>
       <div class="p-badges">
@@ -361,10 +379,14 @@ function renderParticipantsList(list) {
   });
 }
 
-// ── Filtro de Búsqueda ──
+// ── Filtro de Búsqueda (Soporta Nombre de Contrato y Nombre en Facebook) ──
 participantSearch.addEventListener('input', (e) => {
   const q = e.target.value.toLowerCase().trim();
-  const filtered = matchedParticipants.filter(p => p.name.toLowerCase().includes(q) || p.equipo.toLowerCase().includes(q));
+  const filtered = matchedParticipants.filter(p => 
+    p.name.toLowerCase().includes(q) || 
+    p.equipo.toLowerCase().includes(q) ||
+    (p.fbAccountName && p.fbAccountName.toLowerCase().includes(q))
+  );
   renderParticipantsList(filtered);
 });
 
@@ -372,7 +394,7 @@ btnCancelReview.addEventListener('click', () => {
   showView(viewReady);
 });
 
-// ── Descargar Excel de Prueba (.xlsx) Local ──
+// ── Descargar Excel rellenando la plantilla embebida (.xlsx) ──
 const btnDownloadTestExcel = document.getElementById('btnDownloadTestExcel');
 if (btnDownloadTestExcel) {
   btnDownloadTestExcel.addEventListener('click', async () => {
@@ -380,39 +402,128 @@ if (btnDownloadTestExcel) {
     const originalText = btnDownloadTestExcel.innerHTML;
     btnDownloadTestExcel.innerHTML = `<span>Generando Excel...</span>`;
 
-    const payload = {
-      monthTitle: monthSelect.value || 'Septiembre-2026',
-      date: postDateInput.value.trim(),
-      postName: postNameInput.value.trim() || 'Publicación Facebook',
-      postLink: lastScanResults?.postUrl || '',
-      participants: matchedParticipants,
-    };
-
     try {
-      const res = await fetch(`${API_BASE_URL}/api/extension/download-excel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      // 1. Cargar la plantilla embebida en la extensión
+      const templateUrl = chrome.runtime.getURL('template.xlsx');
+      const response = await fetch(templateUrl);
+      if (!response.ok) throw new Error('No se pudo cargar la plantilla template.xlsx');
+      const arrayBuffer = await response.arrayBuffer();
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Error al generar Excel');
+      // 2. Abrir con SheetJS
+      const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+
+      // 3. Determinar la hoja objetivo según el mes seleccionado
+      const selectedMonth = (monthSelect.value || 'SEPTIEMBRE-2026').toUpperCase();
+      let sheetName = wb.SheetNames.find(n => n.toUpperCase() === selectedMonth);
+      if (!sheetName) {
+        // Buscar coincidencia parcial
+        sheetName = wb.SheetNames.find(n => n.toUpperCase().includes(selectedMonth.split('-')[0]));
+      }
+      if (!sheetName) sheetName = wb.SheetNames[wb.SheetNames.length - 1]; // Última hoja como fallback
+      const ws = wb.Sheets[sheetName];
+
+      // 4. Estructura de la plantilla:
+      //    Fila 1: Título (merged)
+      //    Fila 2: Fechas — celdas merged en grupos de 3 (F2:H2, I2:K2, ...)
+      //    Fila 3: Sección + TOTALES en cols BN-BQ
+      //    Fila 4: Headers (No, EQUIPO, Contratista, Perfil, PERFIL PUBLICO, Compartio, Comento, Reacciono, ...)
+      //    Filas 5+: Datos de contratistas
+      //    Cols base de datos: F=6 (col index 5 en 0-based)
+      //    Cada publicación ocupa 3 columnas: Compartio, Comento, Reacciono
+
+      const HEADER_ROW = 4;   // Fila 4 (1-indexed)
+      const DATA_START_COL = 5; // Columna F (0-indexed = 5)
+      const TOTALS_COL = 65;    // Columna BN (0-indexed = 65)
+
+      // 5. Encontrar la primera columna vacía (sin fecha real en fila 2)
+      let targetCol = -1;
+      for (let c = DATA_START_COL; c < TOTALS_COL; c += 3) {
+        const cellRef = XLSX.utils.encode_cell({ r: 1, c: c }); // Fila 2 (0-indexed = 1)
+        const cell = ws[cellRef];
+        const val = cell ? String(cell.v || '').trim() : '';
+        if (!val || val === '(COLOCAR FECHA)') {
+          targetCol = c;
+          break;
+        }
       }
 
-      const blob = await res.blob();
+      if (targetCol < 0) {
+        alert('No hay columnas disponibles en la plantilla. Todas están ocupadas.');
+        return;
+      }
+
+      // 6. Escribir la FECHA en fila 2 (merged cell, solo escribimos en la primera del grupo)
+      const dateVal = postDateInput.value.trim() || getTodayFormatted();
+      const dateCellRef = XLSX.utils.encode_cell({ r: 1, c: targetCol });
+      ws[dateCellRef] = { v: dateVal, t: 's' };
+
+      // 7. Llenar los nombres de contratistas y datos del equipo en las filas correspondientes
+      //    usando el rowIdx de contractors_default.json como referencia de fila Excel
+      const contractorMap = new Map();
+      matchedParticipants.forEach(p => {
+        if (p.rowIdx) contractorMap.set(p.rowIdx, p);
+      });
+
+      // Escribir nombre, equipo y datos de cada contratista
+      officialContractors.forEach(contractor => {
+        const excelRow = contractor.rowIdx; // rowIdx ya es la fila exacta del Excel (1-indexed)
+        if (!excelRow) return;
+        const r = excelRow - 1; // Convertir a 0-indexed para SheetJS
+
+        // Escribir nombre del contratista en col C (index 2)
+        const nameRef = XLSX.utils.encode_cell({ r, c: 2 });
+        ws[nameRef] = { v: contractor.name, t: 's' };
+
+        // Escribir equipo en col B (index 1)
+        const equipoRef = XLSX.utils.encode_cell({ r, c: 1 });
+        ws[equipoRef] = { v: contractor.equipo || '', t: 's' };
+
+        // Escribir perfil en col D (index 3)
+        const perfilRef = XLSX.utils.encode_cell({ r, c: 3 });
+        ws[perfilRef] = { v: contractor.profileLink || '', t: 's' };
+
+        // Escribir nombre de cuenta FB en col E (index 4)
+        const fbRef = XLSX.utils.encode_cell({ r, c: 4 });
+        ws[fbRef] = { v: contractor.fbAccountName || '', t: 's' };
+
+        // 8. Escribir los puntajes del escaneo en las columnas de la publicación
+        const matched = contractorMap.get(excelRow);
+
+        // Compartio (targetCol)
+        const sharedRef = XLSX.utils.encode_cell({ r, c: targetCol });
+        ws[sharedRef] = { v: matched && matched.shared ? 20 : 0, t: 'n' };
+
+        // Comento (targetCol + 1)
+        const commentRef = XLSX.utils.encode_cell({ r, c: targetCol + 1 });
+        ws[commentRef] = { v: matched && matched.commented ? 15 : 0, t: 'n' };
+
+        // Reacciono (targetCol + 2)
+        const reactRef = XLSX.utils.encode_cell({ r, c: targetCol + 2 });
+        ws[reactRef] = { v: matched && matched.reacted ? 10 : 0, t: 'n' };
+      });
+
+      // 9. Actualizar el rango de la hoja para incluir todas las celdas escritas
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      const maxRow = Math.max(range.e.r, 78); // Hasta fila 78 por los contratistas
+      const maxCol = Math.max(range.e.c, targetCol + 2);
+      ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxRow, c: maxCol } });
+
+      // 10. Generar y descargar el archivo
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `PRUEBA_${payload.monthTitle}_${payload.date.replace(/\//g, '-')}.xlsx`;
+      const safeName = (postNameInput.value.trim() || 'Publicacion').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s-]/g, '').substring(0, 40);
+      a.download = `SEGUIMIENTO_${selectedMonth}_${dateVal.replace(/\//g, '-')}_${safeName}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+
     } catch (err) {
-      console.warn('Servidor local no disponible para exportación, descargando directo de Google Sheets:', err);
-      const directDownloadUrl = `https://docs.google.com/spreadsheets/d/1xA8UvFMuz3LfbB1o4JfnZ1T0ok12aYg_0f6rdjIbD1Q/export?format=xlsx`;
-      window.open(directDownloadUrl, '_blank');
+      console.error('Error al generar Excel desde plantilla:', err);
+      alert('Error al generar el Excel: ' + err.message);
     } finally {
       btnDownloadTestExcel.disabled = false;
       btnDownloadTestExcel.innerHTML = originalText;

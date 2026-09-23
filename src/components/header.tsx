@@ -1,10 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
-import { useState, useRef, useEffect } from 'react';
-import { Users, TrendingUp, Clock, Radio, CalendarDays, Building2, ChevronDown, Check } from 'lucide-react';
-import type { Department } from '@/lib/googleSheets';
+import { Users, TrendingUp, Clock, Radio, CalendarDays } from 'lucide-react';
 
 export type MonthTab = {
   id: string;
@@ -18,44 +15,20 @@ interface HeaderProps {
   months: MonthTab[];
   selectedMonthId: string | null;
   onSelectMonth: (id: string) => void;
-  departments: Department[];
-  activeDepartment: Department;
 }
 
 export default function Header({
   totalParticipants, activeUsers, avgParticipationRate,
   months, selectedMonthId, onSelectMonth,
-  departments, activeDepartment,
 }: HeaderProps) {
-  const router = useRouter();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Cierra el dropdown al hacer clic fuera
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleSelectDepartment = (dep: Department) => {
-    setDropdownOpen(false);
-    // Navega a la URL con el parámetro ?dep=slug
-    router.push(`/?dep=${dep.slug}`);
-  };
-
   return (
     <header className="bg-white border-b border-[var(--border)]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
 
         {/* Fila principal */}
-        <div className="flex items-center justify-between py-3 gap-3 flex-wrap">
+        <div className="flex items-center justify-between py-3">
           <div className="flex items-center gap-4">
-            <a href="/" className="bg-blue-50 rounded-xl px-3 py-1.5 flex items-center hover:bg-blue-100 transition-colors" title="Volver al selector">
+            <div className="bg-blue-50 rounded-xl px-3 py-1.5 flex items-center">
               <Image
                 src="/logos/logo.png"
                 alt="Alcaldía de Acacías"
@@ -66,7 +39,7 @@ export default function Header({
                 priority
                 unoptimized
               />
-            </a>
+            </div>
 
             <div className="border-l border-gray-200 h-10 hidden sm:block" />
 
@@ -75,7 +48,7 @@ export default function Header({
                 Tabla de posiciones
               </h1>
               <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
-                <span className="text-[var(--primary)] font-medium">{activeDepartment.name}</span>
+                <span>Oficina TIC</span>
                 <span className="w-1 h-1 rounded-full bg-gray-300" />
                 <span>CPS · 2do semestre 2026</span>
                 <span className="w-1 h-1 rounded-full bg-gray-300" />
@@ -84,52 +57,8 @@ export default function Header({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* ─── Selector de dependencia ─── */}
-            <div ref={dropdownRef} className="relative">
-              <button
-                onClick={() => setDropdownOpen(prev => !prev)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] bg-white hover:bg-gray-50 transition-colors text-sm font-semibold text-gray-700 shadow-sm max-w-[220px]"
-              >
-                <Building2 size={14} className="text-[var(--primary)] shrink-0" />
-                <span className="truncate">{activeDepartment.name}</span>
-                <ChevronDown
-                  size={13}
-                  className={`text-gray-400 shrink-0 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              {dropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-64 bg-white border border-[var(--border)] rounded-xl shadow-xl overflow-hidden">
-                  <div className="px-3 py-2 border-b border-gray-50">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
-                      Seleccionar dependencia
-                    </p>
-                  </div>
-                  <ul className="max-h-72 overflow-y-auto py-1">
-                    {departments.map(dep => (
-                      <li key={dep.slug}>
-                        <button
-                          onClick={() => handleSelectDepartment(dep)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors ${
-                            dep.slug === activeDepartment.slug
-                              ? 'bg-blue-50 text-[var(--primary)] font-semibold'
-                              : 'text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className="flex-1 truncate">{dep.name}</span>
-                          {dep.slug === activeDepartment.slug && (
-                            <Check size={13} className="text-[var(--primary)] shrink-0" />
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            {/* Stats compactas */}
+          {/* Stats compactas en header */}
+          <div className="flex items-center gap-2">
             <Stat icon={Users} value={totalParticipants} label="Participantes" color="text-[var(--primary)] bg-blue-50" />
             <Stat icon={TrendingUp} value={`${activeUsers}`} label="Activos" color="text-emerald-600 bg-emerald-50" />
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-50">
@@ -154,7 +83,7 @@ export default function Header({
           </span>
         </div>
 
-        {/* Panel de pestañas por mes */}
+        {/* Panel de pestañas por mes: se genera automáticamente con cada pestaña válida del Excel */}
         {months.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-3 -mb-1 scrollbar-none">
             <CalendarDays size={14} className="text-gray-400 shrink-0" />

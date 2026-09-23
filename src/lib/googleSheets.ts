@@ -74,30 +74,6 @@ export type DashboardData = {
   months: MonthData[];
 };
 
-// ─── Dependencias de la Alcaldía de Acacías ───────────────────────────────────
-
-export type Department = {
-  slug: string;
-  name: string;
-  sheetId: string;
-};
-
-export const DEPARTMENTS: Department[] = [
-  { slug: 'tic',             name: 'Oficina TIC',                    sheetId: '1xA8UvFMuz3LfbB1o4JfnZ1T0ok12aYg_0f6rdjIbD1Q' },
-  { slug: 'administrativa',  name: 'Administrativa y Financiera',    sheetId: '1TJAzw7QqWEDi1M3Q3hR6rnx2JDADmL2vV4lmq2yUb2Q' },
-  { slug: 'contratacion',    name: 'Contratación',                   sheetId: '1Y3njHl6tg4ODcWkafrmi-o06_IGlyQihouO1neIihQ8' },
-  { slug: 'control-interno', name: 'Control Interno',                sheetId: '1n_WtYCnIood3ktJV3l9Ii8QMkGHF-EulwT_401iTJdE' },
-  { slug: 'espa',            name: 'ESPA',                           sheetId: '1wTG_8EtrE8RaL7FgP6MZedWfvxMMzNzFWO1dwZmE8Ic' },
-  { slug: 'fomento',         name: 'Fomento y Desarrollo Sostenible',sheetId: '1Kf0-ydVx8ONQXwn2njcLS6veVTii3MBeuEmAnxxt6A4' },
-  { slug: 'gobierno',        name: 'Gobierno',                       sheetId: '17xCFYpIavRYmCd4QFYkPy1K9Hs0sp4LG0xbeojza5_Y' },
-  { slug: 'hospital',        name: 'Hospital Municipal',             sheetId: '1JZH2yWvlLjV-XvV7IaxwKedhzHubIKMFG4jI826Kkr0' },
-  { slug: 'itta',            name: 'ITTA',                           sheetId: '1TbJ1ZdG-c_5B6Gc_YWhn3ca5Zb77LqsuS_poMKddr2o' },
-  { slug: 'planeacion',      name: 'Planeación y Vivienda',          sheetId: '1Qk74ha3lkyDtWoUEqKqq1bzIUzUEHVW9NrrQZTIXdwQ' },
-  { slug: 'salud',           name: 'Salud',                          sheetId: '1dRobk-KmSQHTB8SEHmxW4UCKXsqm_zCh_-BlTb_NWFg' },
-  { slug: 'infraestructura', name: 'Infraestructura',                sheetId: '1CtTsfT5Ew8Jbe6m6cgApwcg_WXTcb9LNeMKrrttXZmk' },
-  { slug: 'social',          name: 'Social',                         sheetId: '1Jv6Pp9zsRl-zBAg9a92hXoSMS7oj-aVlvUDMBS9raxA' },
-];
-
 const DEFAULT_POINTS: ActionPoints = { shared: 15, commented: 20, reacted: 10 };
 
 /**
@@ -419,91 +395,59 @@ async function fetchHiddenRowsBySheet(
   return hiddenBySheet;
 }
 
-// ─── Caché en memoria por sheetId ────────────────────────────────────────────
-// Persiste mientras el proceso Node.js esté vivo (dev y producción).
-// TTL: 5 minutos. Ajusta CACHE_TTL_MS si necesitas actualizaciones más frecuentes.
-
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-
-type CacheEntry = { data: DashboardData; expiresAt: number };
-const rankingCache = new Map<string, CacheEntry>();
-
-async function fetchFromSheets(spreadsheetId: string): Promise<DashboardData> {
+export async function getRankingData(): Promise<DashboardData> {
   const empty: DashboardData = { months: [] };
 
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  // ── Lista de pestañas del spreadsheet ──────────────────────────────────
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId,
-    fields: 'sheets(properties(sheetId,title,index))',
-  });
-  const sheetInfos = (meta.data.sheets || [])
-    .map(s => s.properties)
-    .filter((p): p is { sheetId: number; title: string; index?: number } =>
-      p?.sheetId != null && !!p.title)
-    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-
-  if (sheetInfos.length === 0) return empty;
-
-  const ranges = sheetInfos.map(p => `'${p.title.replace(/'/g, "''")}'!A1:ZZ`);
-
-  // ── Valores de todas las pestañas ──────────────────────────────────────
-  const vres = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
-
-  // ── Filas ocultas por pestaña ───────────────────────────────────────────
-  const hiddenBySheet = await fetchHiddenRowsBySheet(sheets, spreadsheetId, sheetInfos, ranges);
-
-  // ── Procesar cada pestaña válida ────────────────────────────────────────
-  const months: MonthData[] = [];
-  sheetInfos.forEach((info, i) => {
-    const rows = vres.data.valueRanges?.[i]?.values;
-    if (!rows || rows.length < 4) return;
-    const month = buildMonthData(
-      String(info.sheetId),
-      info.title,
-      rows,
-      hiddenBySheet[String(info.sheetId)] ?? new Set<number>(),
-    );
-    if (month) months.push(month);
-  });
-
-  return { months };
-}
-
-export async function getRankingData(sheetId?: string): Promise<DashboardData> {
-  const key = sheetId ?? process.env.GOOGLE_SHEET_ID ?? 'default';
-  const now = Date.now();
-
-  // Devuelve datos cacheados si aún son válidos
-  const cached = rankingCache.get(key);
-  if (cached && cached.expiresAt > now) {
-    console.log(`[cache HIT] ${key.slice(0, 12)}… (expira en ${Math.round((cached.expiresAt - now) / 1000)}s)`);
-    return cached.data;
-  }
-
-  console.log(`[cache MISS] ${key.slice(0, 12)}… — consultando Google Sheets`);
-
   try {
-    const spreadsheetId = sheetId ?? process.env.GOOGLE_SHEET_ID;
-    const data = await fetchFromSheets(spreadsheetId as string);
-    rankingCache.set(key, { data, expiresAt: now + CACHE_TTL_MS });
-    return data;
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+
+    // ── Lista de pestañas del spreadsheet ────────────────────────────────
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(sheetId,title,index))',
+    });
+    const sheetInfos = (meta.data.sheets || [])
+      .map(s => s.properties)
+      .filter((p): p is { sheetId: number; title: string; index?: number } =>
+        p?.sheetId != null && !!p.title)
+      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+    if (sheetInfos.length === 0) return empty;
+
+    const ranges = sheetInfos.map(p => `'${p.title.replace(/'/g, "''")}'!A1:ZZ`);
+
+    // ── Valores de todas las pestañas ────────────────────────────────────
+    const vres = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
+
+    // ── Filas ocultas por pestaña (no se leen: ni gráficas ni tabla) ─────
+    const hiddenBySheet = await fetchHiddenRowsBySheet(sheets, spreadsheetId, sheetInfos, ranges);
+
+    // ── Procesar cada pestaña; solo se incluyen las que tienen el formato ─
+    const months: MonthData[] = [];
+    sheetInfos.forEach((info, i) => {
+      const rows = vres.data.valueRanges?.[i]?.values;
+      if (!rows || rows.length < 4) return;
+      const month = buildMonthData(
+        String(info.sheetId),
+        info.title,
+        rows,
+        hiddenBySheet[String(info.sheetId)] ?? new Set<number>(),
+      );
+      if (month) months.push(month);
+    });
+
+    return { months };
   } catch (error) {
     console.error('Error fetching Google Sheets data:', error);
-    // Si ya hay datos viejos en caché, los retorna en vez de mostrar pantalla vacía
-    if (cached) {
-      console.warn('[cache STALE] Usando datos expirados por error de red');
-      return cached.data;
-    }
-    return { months: [] };
+    return empty;
   }
 }

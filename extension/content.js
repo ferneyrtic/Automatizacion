@@ -62,12 +62,66 @@
     'minuto', 'minutos', 'hora', 'horas', 'dia', 'dias', 'día', 'días', 'sem', 'semana'
   ];
 
+  // ── Personalización de Contratistas Objetivos (Columna F) ──
+  let targetNamesMap = new Map(); // normalized name -> original name
+  let targetUrlsSet = new Set();
+
+  function initTargets(contractors) {
+    targetNamesMap.clear();
+    targetUrlsSet.clear();
+    if (!Array.isArray(contractors)) return;
+
+    contractors.forEach(c => {
+      if (c.fbAccountName) {
+        const norm = normalizeText(c.fbAccountName);
+        if (norm) targetNamesMap.set(norm, c.fbAccountName);
+      }
+      if (c.name) {
+        const norm = normalizeText(c.name.replace(/\s*[-–—].*$/, '').replace(/\s*\(.*?\)/, ''));
+        if (norm) targetNamesMap.set(norm, c.name);
+      }
+      if (c.profileLink) {
+        const cu = cleanFacebookUrl(c.profileLink);
+        if (cu) targetUrlsSet.add(cu);
+      }
+    });
+  }
+
+  function isTargetContractor(name, url) {
+    if (url && targetUrlsSet.has(cleanFacebookUrl(url))) return true;
+    if (!name) return false;
+    const norm = normalizeText(name);
+    return targetNamesMap.has(norm);
+  }
+
   function isSystemName(name) {
-    if (!name || name.length < 3) return true;
+    if (!name) return true;
+    if (isTargetContractor(name)) return false; // Si es un contratista conocido, nunca es del sistema
+    if (name.length < 3) return true;
     const norm = normalizeText(name);
     if (SYSTEM_WORDS.some(w => norm === w || norm.startsWith('responder') || norm.startsWith('hace '))) return true;
     if (/^\d+\s*(h|d|min|sem|días|dias)/i.test(norm)) return true;
     return false;
+  }
+
+  // ── Limpiador de texto de nombres mostrados en Facebook ──
+  function cleanFbDisplayName(name) {
+    if (!name) return '';
+    return name
+      .split('\n')[0]
+      .replace(/·.*$/, '')
+      .replace(/\s*\(.*?\)\s*/g, ' ')
+      .trim();
+  }
+
+  function getReactionsDialog() {
+    const dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
+    return dialogs.find(d => {
+      const hasTabs = d.querySelector('div[role="tablist"], [role="tab"]') !== null;
+      const hasCommentInput = d.querySelector('form, [aria-label*="comentario"], [contenteditable="true"]') !== null;
+      const txt = (d.innerText || '').toLowerCase();
+      return hasTabs && !hasCommentInput && (txt.includes('todas') || txt.includes('me gusta') || txt.includes('personas que') || txt.includes('reacciones'));
+    }) || null;
   }
 
   function extractNameFromElement(el) {
@@ -79,20 +133,24 @@
         name = label.replace(/^(foto del perfil de|perfil de|ver perfil de)\s+/i, '').trim();
       }
     }
-    return name;
+    return cleanFbDisplayName(name);
   }
 
-  // ── Extracción 100% Pasiva de Comentarios ──
+  // ── Extracción 100% Pasiva y Segregada de Comentarios ──
   function extractAllVisibleComments() {
     const commentsMap = new Map(); // Key: normalized name -> { name, url }
+    const reactionsDlg = getReactionsDialog();
 
-    function addCommenter(rawName, rawUrl) {
+    function addCommenter(rawName, rawUrl, el) {
       if (!rawName) return;
-      const cleanName = rawName.split('\n')[0].trim();
+      // BLOQUEO ESTRICTO: Ningún elemento dentro del modal de reacciones puede ser un comentario
+      if (el && reactionsDlg && reactionsDlg.contains(el)) return;
+
+      const cleanName = cleanFbDisplayName(rawName);
       if (isSystemName(cleanName)) return;
 
       const normKey = normalizeText(cleanName);
-      if (normKey.length < 3) return;
+      if (normKey.length < 2) return;
 
       const cleanUrl = cleanFacebookUrl(rawUrl);
 
@@ -106,67 +164,52 @@
     // 1. Artículos de comentarios (div[role="article"])
     const articles = document.querySelectorAll('div[role="article"]');
     articles.forEach(art => {
-      // De aria-label (ej. "Comentario de Leonardo Bustos Caballero...")
+      // Si el artículo está dentro del modal de reacciones, ignorar por completo
+      if (reactionsDlg && reactionsDlg.contains(art)) return;
+
+      // 1.1 De aria-label (ej. "Comentario de Cindy Herrera hace 2 horas")
       const aria = art.getAttribute('aria-label') || '';
+      let authorFound = false;
+
       if (aria) {
         const match = aria.match(/(?:Comentario de|Comment by)\s+([^,·\n]+)/i);
         if (match && match[1]) {
           const authorAnchor = art.querySelector('a[href]');
-          addCommenter(match[1].trim(), authorAnchor ? authorAnchor.getAttribute('href') : '');
+          addCommenter(match[1].trim(), authorAnchor ? authorAnchor.getAttribute('href') : '', art);
+          authorFound = true;
         }
       }
 
-      // De enlaces dentro del artículo
-      const anchors = art.querySelectorAll('a[href], [role="link"]');
-      anchors.forEach(a => {
-        const name = extractNameFromElement(a);
-        const href = a.getAttribute ? a.getAttribute('href') : '';
-        if (name && !isSystemName(name)) {
-          addCommenter(name, href);
+      // 1.2 Si no tiene aria-label, buscar el autor en el primer enlace o cabecera del comentario
+      if (!authorFound) {
+        const anchors = art.querySelectorAll('a[href], a[role="link"]');
+        for (const a of anchors) {
+          const name = extractNameFromElement(a);
+          const href = a.getAttribute ? a.getAttribute('href') : '';
+          if (name && !isSystemName(name)) {
+            addCommenter(name, href, a);
+            break; // El primer enlace de persona es el autor del comentario
+          }
         }
-      });
-
-      // De etiquetas destacadas / negritas
-      const boldSpans = art.querySelectorAll('strong, span[dir="auto"] > span, span[style*="font-weight"]');
-      boldSpans.forEach(s => {
-        const name = (s.innerText || '').trim();
-        if (name && name.split(/\s+/).length >= 2 && !isSystemName(name)) {
-          const parentAnchor = s.closest('a[href]');
-          addCommenter(name, parentAnchor ? parentAnchor.getAttribute('href') : '');
-        }
-      });
+      }
     });
 
-    // 2. Elementos cerca de la barra de acciones de comentario ("Responder" + "Me gusta")
+    // 2. Comentarios con barra de interacción ("Responder" + "Me gusta")
     const actionRows = Array.from(document.querySelectorAll('div, span')).filter(el => {
+      if (reactionsDlg && reactionsDlg.contains(el)) return false;
       const t = (el.innerText || '').trim();
       return (t.includes('Me gusta') || t.includes('Like')) && (t.includes('Responder') || t.includes('Reply'));
     });
 
     actionRows.forEach(row => {
       const parent = row.closest('div[role="article"]') || row.parentElement?.parentElement;
-      if (parent) {
-        const anchors = parent.querySelectorAll('a[href], [role="link"], strong, span[dir="auto"]');
-        anchors.forEach(a => {
-          const name = extractNameFromElement(a);
-          const href = a.getAttribute ? a.getAttribute('href') : '';
-          if (name && name.split(/\s+/).length >= 2 && !isSystemName(name)) {
-            addCommenter(name, href);
-          }
-        });
-      }
-    });
-
-    // 3. Cualquier enlace a perfil que esté en el contenido desplegado
-    const allLinks = document.querySelectorAll('a[href]');
-    allLinks.forEach(a => {
-      const href = a.getAttribute('href');
-      if (href) {
-        const clean = cleanFacebookUrl(href);
-        if (clean) {
-          const name = extractNameFromElement(a);
-          if (name && name.split(/\s+/).length >= 2 && !isSystemName(name)) {
-            addCommenter(name, href);
+      if (parent && (!reactionsDlg || !reactionsDlg.contains(parent))) {
+        const authorAnchor = parent.querySelector('a[href], a[role="link"], strong');
+        if (authorAnchor) {
+          const name = extractNameFromElement(authorAnchor);
+          const href = authorAnchor.getAttribute ? authorAnchor.getAttribute('href') : '';
+          if (name && !isSystemName(name)) {
+            addCommenter(name, href, authorAnchor);
           }
         }
       }
@@ -175,16 +218,9 @@
     return Array.from(commentsMap.values());
   }
 
-  // ── Extracción 100% Pasiva de Reacciones (Likes Reales) ──
+  // ── Extracción 100% Pasiva de Reacciones (Exclusivamente del diálogo de Likes) ──
   function extractReactions() {
-    const dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
-    const reactionsDialog = dialogs.find(d => {
-      const hasTabs = d.querySelector('div[role="tablist"], [role="tab"]') !== null;
-      const hasCommentInput = d.querySelector('form, [aria-label*="comentario"], [contenteditable="true"]') !== null;
-      const txt = (d.innerText || '').toLowerCase();
-      return hasTabs && !hasCommentInput && (txt.includes('todas') || txt.includes('me gusta') || txt.includes('personas que'));
-    });
-
+    const reactionsDialog = getReactionsDialog();
     if (!reactionsDialog) return [];
 
     const results = new Map();
@@ -201,12 +237,27 @@
       }
     });
 
+    // También buscar en los elementos de texto con role="link" dentro del diálogo
+    const roleLinks = reactionsDialog.querySelectorAll('[role="link"], span[dir="auto"]');
+    roleLinks.forEach(el => {
+      const name = extractNameFromElement(el);
+      if (name && !isSystemName(name)) {
+        const parentA = el.closest('a[href]');
+        const href = parentA ? parentA.getAttribute('href') : '';
+        const clean = href ? cleanFacebookUrl(href) : '';
+        const normKey = normalizeText(name);
+        if (!results.has(normKey)) {
+          results.set(normKey, { name, url: clean });
+        }
+      }
+    });
+
     return Array.from(results.values());
   }
 
   // ── Ejecutor Principal (Instantáneo y Pasivo) ──
   async function runScan(onProgress) {
-    if (onProgress) onProgress({ step: 'Capturando comentarios en pantalla...', percent: 40 });
+    if (onProgress) onProgress({ step: 'Auditando comentarios en pantalla...', percent: 40 });
 
     const comments = extractAllVisibleComments();
 
@@ -253,6 +304,9 @@
     }
 
     if (message.action === 'START_SCAN') {
+      if (message.targetContractors) {
+        initTargets(message.targetContractors);
+      }
       runScan((update) => {
         chrome.runtime.sendMessage({ action: 'SCAN_PROGRESS', data: update }).catch(() => {});
       }).then(results => {
