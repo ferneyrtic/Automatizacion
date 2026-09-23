@@ -10,7 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
-import type { UserRanking, PublicationStat, DayRecord, MonthData } from '@/lib/googleSheets';
+import type { UserRanking, PublicationStat, DayRecord, MonthData, Department } from '@/lib/googleSheets';
 import Header from '@/components/header';
 import HistorialModal from '@/components/HistorialModal';
 import AnalyticsModal from '@/components/AnalyticsModal';
@@ -212,9 +212,11 @@ function PublicationPanel({
 
 interface Props {
   months: MonthData[];
+  departments: Department[];
+  activeDepartment: Department;
 }
 
-export default function RankingClient({ months }: Props) {
+export default function RankingClient({ months, departments, activeDepartment }: Props) {
   const [selectedMonthId, setSelectedMonthId]     = useState<string | null>(null);
   const [selectedUser, setSelectedUser]           = useState<UserRanking | null>(null);
   const [selectedPublication, setSelectedPublication] = useState<PublicationStat | null>(null);
@@ -387,6 +389,8 @@ export default function RankingClient({ months }: Props) {
           months={[]}
           selectedMonthId={null}
           onSelectMonth={() => {}}
+          departments={departments}
+          activeDepartment={activeDepartment}
         />
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20 text-center">
           <Search size={32} className="mx-auto mb-3 text-gray-200" />
@@ -426,6 +430,8 @@ export default function RankingClient({ months }: Props) {
         months={monthTabs}
         selectedMonthId={current.id}
         onSelectMonth={selectMonth}
+        departments={departments}
+        activeDepartment={activeDepartment}
       />
 
       <div key={current.id} className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
