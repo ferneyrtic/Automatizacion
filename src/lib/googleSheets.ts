@@ -199,52 +199,115 @@ function extractProfileLink(raw: string | undefined): string | undefined {
 
 type SheetStructure = {
   headerRowIdx: number;
-  baseCol: number;      // columna donde inician las acciones (Compartio)
-  dateRowIdx: number;
-  nameRowIdx: number;
+  contratistaCol: number;
+  equipoCol: number;
+  perfilCol: number;
+  baseCol: number;      // columna donde inician las acciones (Compartio), o -1 si no hay
+  dateRowIdx: number;   // fila de fechas de publicación, o -1 si no hay
+  nameRowIdx: number;   // fila de nombres de publicaciones, o -1 si no hay
   dataStart: number;
 };
 
 /**
  * Detecta si una pestaña tiene el formato de tabla analizable:
- * fila de encabezados con "Contratista" + "Compartio/Comento/Reacciono",
- * y una fila de fechas de publicación (dd/mm/yyyy o "1 de septiembre de 2026").
- * La columna base se detecta por contenido, por lo que tolera columnas desplazadas.
+ * fila de encabezados con "Contratista" (y opcionalmente "Compartio/Comento/Reacciono"),
+ * y opcionalmente una fila de fechas de publicación.
+ * Permite cargar contratistas aunque el departamento aún no haya registrado publicaciones.
  */
 function detectStructure(rows: string[][]): SheetStructure | null {
-  const max = Math.min(6, rows.length);
+  const max = Math.min(10, rows.length);
 
   let headerRowIdx = -1;
+  let contratistaCol = 2;
+  let equipoCol = 1;
+  let perfilCol = 3;
   let baseCol = -1;
+
   for (let r = 0; r < max; r++) {
     const row = rows[r] || [];
-    if (String(row[2] || '').trim().toLowerCase() !== 'contratista') continue;
-    for (let c = 3; c < Math.min(60, row.length); c++) {
-      if (/^compartio/i.test((row[c] || '').trim())) {
+
+    // 1. Buscar columna con 'contratista'
+    const cIdx = row.findIndex(c => /contratista/i.test(String(c || '').trim()));
+    if (cIdx >= 0) {
+      headerRowIdx = r;
+      contratistaCol = cIdx;
+
+      // Columna de equipo
+      const eIdx = row.findIndex(c => /equipo/i.test(String(c || '').trim()));
+      if (eIdx >= 0) equipoCol = eIdx;
+
+      // Columna de perfil
+      const pIdx = row.findIndex(c => /perfil|enlace|link/i.test(String(c || '').trim()));
+      if (pIdx >= 0) perfilCol = pIdx;
+
+      // Columna donde inician las acciones (Compartio)
+      for (let c = 3; c < Math.min(60, row.length); c++) {
+        if (/^compartio/i.test(String(row[c] || '').trim())) {
+          baseCol = c;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  // 2. Si no se encontró palabra "contratista" explícita, buscar fila con "equipo" y "perfil"
+  if (headerRowIdx < 0) {
+    for (let r = 0; r < max; r++) {
+      const row = rows[r] || [];
+      const hasEquipo = row.some(c => /equipo/i.test(String(c || '').trim()));
+      const hasPerfil = row.some(c => /perfil/i.test(String(c || '').trim()));
+      if (hasEquipo && hasPerfil) {
         headerRowIdx = r;
-        baseCol = c;
+        equipoCol = row.findIndex(c => /equipo/i.test(String(c || '').trim()));
+        perfilCol = row.findIndex(c => /perfil/i.test(String(c || '').trim()));
+        contratistaCol = 2;
+        for (let c = 3; c < Math.min(60, row.length); c++) {
+          if (/^compartio/i.test(String(row[c] || '').trim())) {
+            baseCol = c;
+            break;
+          }
+        }
         break;
       }
     }
-    if (headerRowIdx >= 0) break;
   }
+
   if (headerRowIdx < 0) return null;
 
-  // Fila de fechas: buscar hacia arriba desde el encabezado.
+  // Fila de fechas: buscar hacia arriba desde el encabezado si tenemos baseCol
   let dateRowIdx = -1;
-  for (let r = headerRowIdx - 1; r >= 0; r--) {
-    const row = rows[r] || [];
-    for (let c = baseCol; c < row.length; c += 3) {
-      if (isPublicationDateCell((row[c] || '').trim())) {
-        dateRowIdx = r;
-        break;
+  if (baseCol >= 0) {
+    for (let r = headerRowIdx - 1; r >= 0; r--) {
+      const row = rows[r] || [];
+      for (let c = baseCol; c < row.length; c += 3) {
+        if (isPublicationDateCell(String(row[c] || '').trim())) {
+          dateRowIdx = r;
+          break;
+        }
       }
+      if (dateRowIdx >= 0) break;
     }
-    if (dateRowIdx >= 0) break;
   }
-  if (dateRowIdx < 0) return null;
 
-  return { headerRowIdx, baseCol, dateRowIdx, nameRowIdx: dateRowIdx + 1, dataStart: headerRowIdx + 1 };
+  const dataStart = headerRowIdx + 1;
+
+  // Validar si hay filas con nombres de contratistas o publicaciones
+  const hasContractors = rows.slice(dataStart).some(row => String(row[contratistaCol] || row[2] || '').trim().length > 0);
+  if (!hasContractors && dateRowIdx < 0) {
+    return null;
+  }
+
+  return {
+    headerRowIdx,
+    contratistaCol,
+    equipoCol,
+    perfilCol,
+    baseCol,
+    dateRowIdx,
+    nameRowIdx: dateRowIdx >= 0 ? dateRowIdx + 1 : -1,
+    dataStart,
+  };
 }
 
 /** Construye todos los datos de una pestaña de mes. Devuelve null si no es válida. */
@@ -257,40 +320,44 @@ function buildMonthData(
   const structure = detectStructure(rows);
   if (!structure) return null;
 
-  const { headerRowIdx, baseCol, dateRowIdx, nameRowIdx, dataStart } = structure;
-  const dateRow = rows[dateRowIdx];
-  const nameRow = rows[nameRowIdx] || [];
+  const { headerRowIdx, contratistaCol, equipoCol, perfilCol, baseCol, dateRowIdx, nameRowIdx, dataStart } = structure;
   const headerRow = rows[headerRowIdx] || [];
 
   // Puntos por acción definidos en el encabezado de esta pestaña.
   const points: ActionPoints = {
-    shared: parsePointsFromHeader(headerRow[baseCol], DEFAULT_POINTS.shared),
-    commented: parsePointsFromHeader(headerRow[baseCol + 1], DEFAULT_POINTS.commented),
-    reacted: parsePointsFromHeader(headerRow[baseCol + 2], DEFAULT_POINTS.reacted),
+    shared: (baseCol >= 0 && headerRow[baseCol]) ? parsePointsFromHeader(headerRow[baseCol], DEFAULT_POINTS.shared) : DEFAULT_POINTS.shared,
+    commented: (baseCol >= 0 && headerRow[baseCol + 1]) ? parsePointsFromHeader(headerRow[baseCol + 1], DEFAULT_POINTS.commented) : DEFAULT_POINTS.commented,
+    reacted: (baseCol >= 0 && headerRow[baseCol + 2]) ? parsePointsFromHeader(headerRow[baseCol + 2], DEFAULT_POINTS.reacted) : DEFAULT_POINTS.reacted,
   };
 
-  // Publicaciones: la columna base (desplazada por 3) es el identificador estable.
+  // Publicaciones: solo si hay dateRowIdx y baseCol
   const publications: { id: string; col: number; date: string; name: string; link?: string }[] = [];
-  for (let c = baseCol; c < dateRow.length; c += 3) {
-    const date = dateRow[c]?.trim();
-    if (date && isPublicationDateCell(date)) {
-      const { name, link } = parsePublicationCell(nameRow[c]);
-      publications.push({ id: `pub-${c}`, col: c, date, name, link: link || undefined });
+  if (dateRowIdx >= 0 && baseCol >= 0) {
+    const dateRow = rows[dateRowIdx] || [];
+    const nameRow = nameRowIdx >= 0 ? (rows[nameRowIdx] || []) : [];
+    for (let c = baseCol; c < dateRow.length; c += 3) {
+      const date = dateRow[c]?.trim();
+      if (date && isPublicationDateCell(date)) {
+        const { name, link } = parsePublicationCell(nameRow[c]);
+        publications.push({ id: `pub-${c}`, col: c, date, name, link: link || undefined });
+      }
     }
   }
-  if (publications.length === 0) return null;
 
   // Filas de datos: después del encabezado, con nombre y no ocultas en Excel.
   const dataRows = rows
     .slice(dataStart)
-    .filter((row, i) => row[2]?.trim() && !hiddenRows.has(dataStart + i));
+    .filter((row, i) => String(row[contratistaCol] || row[2] || '').trim() && !hiddenRows.has(dataStart + i));
+
+  // Si no hay filas de contratistas ni publicaciones, descartar pestaña
+  if (dataRows.length === 0 && publications.length === 0) return null;
 
   const rankingMap: Record<string, UserRanking> = {};
 
   for (const row of dataRows) {
-    const name = row[2].trim();
-    const equipo = normalizeTeamName(row[1]);
-    const profileLink = extractProfileLink(row[3]);
+    const name = String(row[contratistaCol] || row[2] || '').trim();
+    const equipo = normalizeTeamName(String(row[equipoCol] || row[1] || ''));
+    const profileLink = extractProfileLink(row[perfilCol] || row[3]);
     let totalPoints = 0;
     const historyByDate: DayRecord[] = [];
 
@@ -320,7 +387,7 @@ function buildMonthData(
     rankingMap[name] = { name, equipo, profileLink, totalPoints, historyByDate };
   }
 
-  const ranking = Object.values(rankingMap).sort((a, b) => b.totalPoints - a.totalPoints);
+  const ranking = Object.values(rankingMap).sort((a, b) => b.totalPoints - a.totalPoints || a.name.localeCompare(b.name));
   const totalParticipants = ranking.length;
   const totalPoints = ranking.reduce((acc, u) => acc + u.totalPoints, 0);
 
@@ -463,7 +530,7 @@ async function fetchFromSheets(spreadsheetId: string): Promise<DashboardData> {
   const months: MonthData[] = [];
   sheetInfos.forEach((info, i) => {
     const rows = vres.data.valueRanges?.[i]?.values;
-    if (!rows || rows.length < 4) return;
+    if (!rows || rows.length < 2) return;
     const month = buildMonthData(
       String(info.sheetId),
       info.title,

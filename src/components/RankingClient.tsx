@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Crown, Medal, Clock, Search, BarChart2,
+  Crown, Medal, Clock, Search, BarChart2, Users,
   Share2, MessageSquare, ThumbsUp, LineChart as LineIcon,
   Calendar, X, ExternalLink, ChevronUp, ChevronDown,
 } from 'lucide-react';
@@ -79,15 +79,21 @@ function SortablePointsHeader({ sort, onToggle, label = 'Puntos' }: {
   );
 }
 
-function EstadoBadge({ activo }: { activo: boolean }) {
+function EstadoBadge({ activo, label }: { activo: boolean; label?: string }) {
+  const text = label || (activo ? 'Activo' : 'Inactivo');
+  const isRegistrado = label === 'Registrado';
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold ${
       activo
         ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-        : 'bg-gray-100 text-gray-400 border border-gray-200'
+        : isRegistrado
+          ? 'bg-blue-50 text-blue-700 border border-blue-100'
+          : 'bg-gray-100 text-gray-400 border border-gray-200'
     }`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${activo ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-      {activo ? 'Activo' : 'Inactivo'}
+      <span className={`w-1.5 h-1.5 rounded-full ${
+        activo ? 'bg-emerald-500' : isRegistrado ? 'bg-blue-500' : 'bg-gray-300'
+      }`} />
+      {text}
     </span>
   );
 }
@@ -436,8 +442,8 @@ export default function RankingClient({ months, departments, activeDepartment }:
 
       <div key={current.id} className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
 
-        {/* ── Fila superior: participación diaria + botón de análisis ── */}
-        {stats.length > 0 && (
+        {/* ── Fila superior: participación diaria o aviso de información insuficiente ── */}
+        {stats.length > 0 ? (
           <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
               <div>
@@ -516,6 +522,40 @@ export default function RankingClient({ months, departments, activeDepartment }:
               )}
             </div>
           </div>
+        ) : (
+          <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <BarChart2 size={15} className="text-gray-400" />
+                  Participación por publicación
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Estadísticas y métricas de publicaciones
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200/60 rounded-full text-[10px] font-semibold tracking-wide">
+                <Clock size={11} />
+                Pendiente de registro
+              </span>
+            </div>
+
+            <div className="p-8 sm:p-12 flex flex-col items-center justify-center text-center">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center mb-3 text-amber-600 shadow-sm">
+                <BarChart2 size={26} className="text-amber-500 opacity-80" />
+              </div>
+              <h3 className="text-base font-bold text-gray-800 mb-1">
+                Información insuficiente para crear los datos
+              </h3>
+              <p className="text-xs text-gray-500 max-w-md leading-relaxed">
+                Este departamento ya cuenta con su lista de contratistas registrada en la hoja de cálculo, pero aún no se han registrado publicaciones ni marcas de participación con fechas evaluadas.
+              </p>
+              <div className="mt-5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600 font-medium">
+                <Users size={13} className="text-[var(--primary)]" />
+                <span>{ranking.length} contratistas registrados en el sistema</span>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ── Tabla de posiciones / participantes por publicación ── */}
@@ -527,7 +567,9 @@ export default function RankingClient({ months, departments, activeDepartment }:
                   ? 'Participantes por publicación'
                   : globalAction !== 'all'
                     ? 'Participantes por acción'
-                    : 'Tabla de posiciones'}
+                    : stats.length === 0
+                      ? 'Contratistas registrados'
+                      : 'Tabla de posiciones'}
               </h2>
               {selectedPublication && (
                 <span className="text-[10px] font-semibold text-[var(--primary)] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full shrink-0">
@@ -551,7 +593,7 @@ export default function RankingClient({ months, departments, activeDepartment }:
               </div>
             </div>
 
-            {!selectedPublication && (
+            {!selectedPublication && stats.length > 0 && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Acciones:</span>
                 {ACTION_KEYS.map(f => (
@@ -760,7 +802,10 @@ export default function RankingClient({ months, departments, activeDepartment }:
                       {user.totalPoints || 0}
                     </span>
                     <div className="text-right w-24">
-                      <EstadoBadge activo={(user.totalPoints || 0) > 0} />
+                      <EstadoBadge
+                        activo={(user.totalPoints || 0) > 0}
+                        label={stats.length === 0 ? 'Registrado' : undefined}
+                      />
                     </div>
                   </div>
                 );
@@ -780,9 +825,11 @@ export default function RankingClient({ months, departments, activeDepartment }:
           <span>
             {selectedPublication
               ? `Total: ${visibleRows.length} de ${publicationRows.length} participantes · ${actionCounts.unparticipated} sin participar`
-              : globalAction !== 'all'
-                ? `Total: ${globalActionRows.length} participantes · ${globalAction === 'unparticipated' ? `${globalActionCounts.unparticipated} sin actividad en el mes` : `${globalActionCounts[globalAction]} ${ACTION_LABELS[globalAction].toLowerCase()} en total`}`
-                : `Total: ${ranking.length} participantes`}
+              : stats.length === 0
+                ? `Total: ${visibleRanking.length} contratistas registrados`
+                : globalAction !== 'all'
+                  ? `Total: ${globalActionRows.length} participantes · ${globalAction === 'unparticipated' ? `${globalActionCounts.unparticipated} sin actividad en el mes` : `${globalActionCounts[globalAction]} ${ACTION_LABELS[globalAction].toLowerCase()} en total`}`
+                  : `Total: ${ranking.length} participantes`}
           </span>
           <span className="flex items-center gap-1.5">
             <Clock size={11} />
