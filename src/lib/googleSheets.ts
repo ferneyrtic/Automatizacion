@@ -122,25 +122,43 @@ function parseActionCell(raw: string | undefined, expectedPoints: number): { don
   return { done: false, points: 0 };
 }
 
-const DATE_PATTERN = /^\d{2}\/\d{2}\/\d{4}/;
-const DATE_PATTERN_ES = /^\d{1,2} de [a-záéíóúñü]+ de \d{4}$/i;
+const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
+const MONTHS_ES_REGEX = MONTHS_ES.join('|');
 
-const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+// Fechas numéricas: 01/10/2026, 1/10/2026, 01/10/26, 01-10-2026, 14-10-26, "02/08/2026 - Duración..."
+const NUMERIC_DATE_REGEX = /^\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?/;
+
+// Fechas en texto en español: "1 de octubre de 2026", "01 de octubre", "1 de octubre", "13 octubre", "14 DE octubre", "21 de septiembre"
+const TEXT_DATE_REGEX = new RegExp(`^\\d{1,2}(?:\\s*(?:de)?\\s*)(${MONTHS_ES_REGEX})(?:\\s*(?:de)?\\s*\\d{2,4})?`, 'i');
 
 function isPublicationDateCell(text: string): boolean {
-  return DATE_PATTERN.test(text) || DATE_PATTERN_ES.test(text);
+  if (!text) return false;
+  const clean = text.trim();
+  if (!clean || clean.startsWith('(') || clean.toLowerCase().includes('colocar')) return false;
+  return NUMERIC_DATE_REGEX.test(clean) || TEXT_DATE_REGEX.test(clean);
 }
 
 function parseShortDate(dateStr: string): string {
-  const match = dateStr.match(/(\d{2}\/\d{2})/);
-  if (match) return match[1];
-  const es = dateStr.match(/^(\d{1,2}) de ([a-záéíóúñü]+)/i);
-  if (es) {
-    const mesIdx = MONTHS_ES.findIndex(m => m.toLowerCase() === es[2].toLowerCase());
-    const abr = mesIdx >= 0 ? MONTHS_ES[mesIdx].slice(0, 3) : es[2].slice(0, 3);
-    return `${es[1]} ${abr.charAt(0).toUpperCase() + abr.slice(1)}`;
+  const clean = (dateStr || '').trim();
+
+  const esMatch = clean.match(new RegExp(`^(\\d{1,2})(?:\\s*(?:de)?\\s*)(${MONTHS_ES_REGEX})`, 'i'));
+  if (esMatch) {
+    const day = parseInt(esMatch[1], 10);
+    const mesNombre = esMatch[2].toLowerCase();
+    const mesIdx = MONTHS_ES.findIndex(m => m.toLowerCase() === mesNombre);
+    const abr = mesIdx >= 0 ? MONTHS_ES[mesIdx].slice(0, 3) : mesNombre.slice(0, 3);
+    const capitalized = abr.charAt(0).toUpperCase() + abr.slice(1);
+    return `${day} ${capitalized}`;
   }
-  return dateStr.slice(0, 5);
+
+  const numMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})/);
+  if (numMatch) {
+    const d = numMatch[1].padStart(2, '0');
+    const m = numMatch[2].padStart(2, '0');
+    return `${d}/${m}`;
+  }
+
+  return clean.slice(0, 5);
 }
 
 /** Lee el valor de puntos de una celda de encabezado como "Compartio (20)". */
@@ -335,10 +353,22 @@ function buildMonthData(
   if (dateRowIdx >= 0 && baseCol >= 0) {
     const dateRow = rows[dateRowIdx] || [];
     const nameRow = nameRowIdx >= 0 ? (rows[nameRowIdx] || []) : [];
-    for (let c = baseCol; c < dateRow.length; c += 3) {
-      const date = dateRow[c]?.trim();
+    const maxCols = Math.max(dateRow.length, nameRow.length);
+    for (let c = baseCol; c < maxCols; c += 3) {
+      let date = dateRow[c]?.trim();
+      let nameCell = nameRow[c];
+
+      // Tolerar si la fecha se colocó en la fila de nombres/links (o viceversa)
+      if (!date || !isPublicationDateCell(date)) {
+        const altDate = nameRow[c]?.trim();
+        if (altDate && isPublicationDateCell(altDate)) {
+          date = altDate;
+          nameCell = dateRow[c];
+        }
+      }
+
       if (date && isPublicationDateCell(date)) {
-        const { name, link } = parsePublicationCell(nameRow[c]);
+        const { name, link } = parsePublicationCell(nameCell);
         publications.push({ id: `pub-${c}`, col: c, date, name, link: link || undefined });
       }
     }
@@ -494,7 +524,7 @@ async function fetchHiddenRowsBySheet(
 // Persiste mientras el proceso Node.js esté vivo (dev y producción).
 // TTL: 5 minutos.
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 2 * 60 * 1000;
 type CacheEntry = { data: DashboardData; expiresAt: number };
 const rankingCache = new Map<string, CacheEntry>();
 

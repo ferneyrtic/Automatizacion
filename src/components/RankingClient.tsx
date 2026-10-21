@@ -223,7 +223,7 @@ interface Props {
 }
 
 export default function RankingClient({ months, departments, activeDepartment }: Props) {
-  const [selectedMonthId, setSelectedMonthId]     = useState<string | null>(null);
+  const [selectedMonthId, setSelectedMonthId]     = useState<string | null>(() => (months.length > 0 ? months[months.length - 1].id : null));
   const [selectedUser, setSelectedUser]           = useState<UserRanking | null>(null);
   const [selectedPublication, setSelectedPublication] = useState<PublicationStat | null>(null);
   const [selectedAction, setSelectedAction]       = useState<ActionFilter>('all');
@@ -232,7 +232,7 @@ export default function RankingClient({ months, departments, activeDepartment }:
   const [pointsSort, setPointsSort]               = useState<'asc' | 'desc'>('desc');
   const [globalAction, setGlobalAction]           = useState<ActionFilter>('all');
 
-  const current = months.find(m => m.id === selectedMonthId) ?? months[0] ?? null;
+  const current = months.find(m => m.id === selectedMonthId) ?? months[months.length - 1] ?? null;
   const ranking = useMemo(() => current?.ranking ?? [], [current]);
 
   const togglePointsSort = () => setPointsSort(s => (s === 'asc' ? 'desc' : 'asc'));
