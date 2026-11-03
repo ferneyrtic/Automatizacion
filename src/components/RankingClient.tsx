@@ -768,7 +768,7 @@ export default function RankingClient({ months, departments, activeDepartment }:
 
               {visibleRanking.map((user, index) => {
                 const position = ranksByName[user.name] || index + 1;
-                const isTop3 = position <= 3;
+                const isTop3 = (user.totalPoints || 0) > 0 && position <= 3;
                 return (
                   <div
                     key={user.name || index}
@@ -784,7 +784,7 @@ export default function RankingClient({ months, departments, activeDepartment }:
                           <span className="text-sm font-bold text-gray-700">{position}</span>
                         </div>
                       ) : (
-                        <span className="text-sm font-medium text-gray-400 tabular-nums">{position}</span>
+                        <span className="text-sm font-medium text-gray-400 tabular-nums">{(user.totalPoints || 0) > 0 ? position : '-'}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-3 min-w-0">

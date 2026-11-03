@@ -4,6 +4,7 @@ import RankingClient from '@/components/RankingClient';
 import DepartmentSelector from '@/components/DepartmentSelector';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 interface PageProps {
   searchParams: Promise<{ dep?: string }>;
